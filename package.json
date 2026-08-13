@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:setup": "DATABASE_URL=$(node --env-file=.env -p process.env.TEST_DATABASE_URL) prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force"
