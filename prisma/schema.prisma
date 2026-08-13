@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  review
+  done
+
+  @@map("task_status")
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+
+  @@map("task_priority")
+}
+
+enum OrgRole {
+  org_admin
+  member
+
+  @@map("org_role")
+}
+
+model User {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships      OrgMember[]
+  tasksCreated     Task[]           @relation("TaskCreatedBy")
+  assignments      TaskAssignment[] @relation("AssignmentUser")
+  assignmentsGiven TaskAssignment[] @relation("AssignmentAssignedBy")
+  comments         Comment[]
+  refreshTokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model Organization {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Deleting an org CASCADEs to org_members, projects, and tasks:
+  // all tenant data goes with it.
+  members  OrgMember[]
+  projects Project[]
+  tasks    Task[]
+
+  @@map("organizations")
+}
+
+model OrgMember {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      OrgRole
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@map("org_members")
+}
+
+model Project {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  description String?
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@index([orgId])
+  @@map("projects")
+}
+
+model Task {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  // org_id is denormalized from projects: lets every task query filter by org
+  // directly without joining projects, core to tenant isolation.
+  // Invariant: org_id must always equal the parent project's org_id; the service
+  // layer derives it from the project row, never from request input.
+  // (DB-level composite-FK enforcement rejected: Prisma cannot model the same
+  // scalar in two relations; this documented invariant is the chosen ceiling.)
+  orgId       String                   @map("org_id") @db.Uuid
+  projectId   String                   @map("project_id") @db.Uuid
+  title       String
+  description String?
+  status      TaskStatus               @default(todo)
+  priority    TaskPriority             @default(medium)
+  dueDate     DateTime?                @map("due_date") @db.Timestamptz(3)
+  // RESTRICT: keep audit trail, cannot delete a user who authored tasks.
+  createdBy   String                   @map("created_by") @db.Uuid
+  deletedAt   DateTime?                @map("deleted_at") @db.Timestamptz(3)
+  // Full-text search vector; a STORED generated column (see init migration).
+  // The dbgenerated default mirrors the introspected expression so migrate diff stays clean.
+  search      Unsupported("tsvector")? @default(dbgenerated("(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('english'::regconfig, COALESCE(description, ''::text)), 'B'::\"char\"))")) @map("search_vector")
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  org         Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author      User             @relation("TaskCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  // Deleting a task CASCADEs to assignments and comments: meaningless without it.
+  assignments TaskAssignment[]
+  comments    Comment[]
+
+  @@index([projectId, status])
+  @@index([orgId, dueDate])
+  @@index([search], type: Gin)
+  @@map("tasks")
+}
+
+model TaskAssignment {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  taskId     String   @map("task_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  // RESTRICT: keep audit trail of who assigned.
+  assignedBy String   @map("assigned_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task     Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user     User @relation("AssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  assigner User @relation("AssignmentAssignedBy", fields: [assignedBy], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, userId])
+  @@index([userId])
+  @@map("task_assignments")
+}
+
+model Comment {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  // RESTRICT: keep audit trail, cannot delete a user who authored comments.
+  authorId  String   @map("author_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([taskId])
+  @@map("comments")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // CASCADE: sessions die with the user.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}

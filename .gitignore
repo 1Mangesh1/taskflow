@@ -5,3 +5,4 @@ coverage/
 *.log
 node-compile-cache/
 tsx-501/
+src/generated/
