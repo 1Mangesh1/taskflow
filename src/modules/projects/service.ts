@@ -4,7 +4,7 @@ import type { Pagination } from '../../lib/pagination.js';
 import { prisma } from '../../lib/prisma.js';
 
 export type ProjectInput = { name: string; description?: string };
-export type ProjectPatch = { name?: string; description?: string };
+export type ProjectPatch = { name?: string; description?: string | null };
 
 const projectFields = {
   id: true,

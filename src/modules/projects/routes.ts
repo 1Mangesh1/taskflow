@@ -5,7 +5,9 @@ import * as controller from './controller.js';
 
 const orgParams = z.object({ orgId: z.uuid() });
 const projectParams = orgParams.extend({ projectId: z.uuid() });
-const name = z.string().min(1).max(200);
+// Trimmed before the length check, so a whitespace-only name is too short rather
+// than a project that renders blank in every list.
+const name = z.string().trim().min(1).max(200);
 const description = z.string().max(2000);
 const projectResponse = z.object({
   id: z.uuid(),
@@ -68,7 +70,7 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
       schema: {
         params: projectParams,
         body: z
-          .object({ name: name.optional(), description: description.optional() })
+          .object({ name: name.optional(), description: description.nullable().optional() })
           .refine((patch) => Object.keys(patch).length > 0, 'Provide at least one field to update'),
         response: { 200: projectResponse },
       },

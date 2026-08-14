@@ -27,7 +27,9 @@ export function buildApp() {
     if (hasZodFastifySchemaValidationErrors(error)) {
       const fieldErrors: Record<string, string[]> = {};
       for (const issue of error.validation) {
-        const field = issue.instancePath.slice(1);
+        // A root-level issue (an object-wide refine) has an empty path: key it to the
+        // body rather than letting an empty string into the error contract.
+        const field = issue.instancePath.slice(1) || 'body';
         (fieldErrors[field] ??= []).push(issue.message ?? issue.keyword);
       }
       return reply

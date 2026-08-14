@@ -88,6 +88,15 @@ test('a project is created, read, listed, patched, and deleted', async () => {
     description: 'Rebuild the marketing site',
   });
 
+  const cleared = await app.inject({
+    method: 'PATCH',
+    url: `/api/orgs/${acme.id}/projects/${id}`,
+    headers: asUser(alice.id),
+    body: { description: null },
+  });
+  expect(cleared.statusCode).toBe(200);
+  expect(cleared.json()).toMatchObject({ id, name: 'Website Relaunch', description: null });
+
   const deleted = await app.inject({
     method: 'DELETE',
     url: `/api/orgs/${acme.id}/projects/${id}`,
@@ -187,6 +196,25 @@ test('a project of another org is missing under your org and forbidden under the
   });
   expect(underOwnOrg.statusCode).toBe(404);
   expect(underOwnOrg.json()).toEqual(NOT_FOUND);
+
+  // Writes are scoped by the same filter as reads, and are asserted separately so a
+  // later split of that filter cannot leave one of them cross-tenant.
+  const patchedUnderOwnOrg = await app.inject({
+    method: 'PATCH',
+    url: `/api/orgs/${acme.id}/projects/${id}`,
+    headers: asUser(alice.id),
+    body: { name: 'Warehouse Sync (mine now)' },
+  });
+  expect(patchedUnderOwnOrg.statusCode).toBe(404);
+  expect(patchedUnderOwnOrg.json()).toEqual(NOT_FOUND);
+
+  const deletedUnderOwnOrg = await app.inject({
+    method: 'DELETE',
+    url: `/api/orgs/${acme.id}/projects/${id}`,
+    headers: asUser(alice.id),
+  });
+  expect(deletedUnderOwnOrg.statusCode).toBe(404);
+  expect(deletedUnderOwnOrg.json()).toEqual(NOT_FOUND);
 
   const underTheirOrg = await app.inject({
     method: 'GET',
@@ -303,6 +331,10 @@ test('a project name is required and a patch has to change something', async () 
   const tooLong = await createProject(acme.id, alice.id, { name: 'x'.repeat(201) });
   expect(tooLong.statusCode).toBe(400);
 
+  const blank = await createProject(acme.id, alice.id, { name: '   ' });
+  expect(blank.statusCode).toBe(400);
+  expect(blank.json().details.fieldErrors.name).toEqual([expect.any(String)]);
+
   const empty = await app.inject({
     method: 'PATCH',
     url: `/api/orgs/${acme.id}/projects/${id}`,
@@ -310,7 +342,11 @@ test('a project name is required and a patch has to change something', async () 
     body: {},
   });
   expect(empty.statusCode).toBe(400);
-  expect(empty.json()).toMatchObject({ code: 'VALIDATION_ERROR' });
+  expect(empty.json()).toEqual({
+    error: expect.any(String),
+    code: 'VALIDATION_ERROR',
+    details: { fieldErrors: { body: ['Provide at least one field to update'] } },
+  });
 });
 
 test('project routes without an access token are unauthorized, not forbidden', async () => {
