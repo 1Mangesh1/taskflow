@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { TaskPriority, TaskStatus } from '../../src/generated/prisma/client.js';
@@ -450,8 +451,8 @@ test('a task whose project was deleted is gone from every read and from bulk upd
   });
 
   const listed = await listTasks(acme.id, doomed.id, alice.id);
-  expect(listed.statusCode).toBe(200);
-  expect(listed.json()).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+  expect(listed.statusCode).toBe(404);
+  expect(listed.json()).toEqual(NO_PROJECT);
 
   const read = await app.inject({
     method: 'GET',
@@ -600,6 +601,18 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   });
   expect(emptyBulk.statusCode).toBe(400);
   expect(emptyBulk.json()).toMatchObject({ code: 'VALIDATION_ERROR' });
+
+  const oversizedBulk = await app.inject({
+    method: 'POST',
+    url: `/api/orgs/${acme.id}/tasks/bulk-status`,
+    headers: asUser(alice.id),
+    body: { taskIds: Array.from({ length: 101 }, () => randomUUID()), status: 'done' },
+  });
+  expect(oversizedBulk.statusCode).toBe(400);
+  expect(oversizedBulk.json()).toMatchObject({
+    code: 'VALIDATION_ERROR',
+    details: { fieldErrors: { taskIds: [expect.any(String)] } },
+  });
 });
 
 test('any member may delete a task, unlike the project that holds it', async () => {

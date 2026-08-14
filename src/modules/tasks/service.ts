@@ -85,6 +85,11 @@ export async function createTask(
 }
 
 export async function listTasks(orgId: string, projectId: string, query: TaskListQuery) {
+  // Worth the extra round trip: without it a project that is another org's, deleted, or
+  // never existed answers with an empty page, which reads as "no tasks yet" instead of
+  // the 404 every other project-scoped route gives.
+  await getProject(orgId, projectId);
+
   const where = taskWhere(orgId, projectId, query.filters);
   const [data, total] = await Promise.all([
     prisma.task.findMany({
