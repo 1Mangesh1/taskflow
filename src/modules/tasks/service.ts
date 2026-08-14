@@ -1,7 +1,14 @@
 import { Prisma, type TaskPriority, type TaskStatus } from '../../generated/prisma/client.js';
-import { TaskNotFoundError } from '../../lib/errors.js';
+import {
+  AlreadyAssignedError,
+  AssignmentNotFoundError,
+  TaskNotFoundError,
+  UserNotOrgMemberError,
+} from '../../lib/errors.js';
 import type { Pagination } from '../../lib/pagination.js';
 import { prisma } from '../../lib/prisma.js';
+import type { AssignmentEmail } from '../../lib/queue.js';
+import { findMembership } from '../orgs/service.js';
 import { getProject } from '../projects/service.js';
 
 export type TaskInput = {
@@ -107,6 +114,19 @@ export async function listTasks(orgId: string, projectId: string, query: TaskLis
   return { data, total, page: query.page, limit: query.limit };
 }
 
+// The gate every route that hangs something off a task goes through: assignments and
+// comments must answer TASK_NOT_FOUND under exactly the same conditions the task's own
+// routes do, so they share this filter rather than restating it.
+export async function requireVisibleTask(orgId: string, projectId: string, taskId: string) {
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, projectId, ...visible(orgId) },
+    select: { title: true },
+  });
+  if (!task) throw new TaskNotFoundError();
+
+  return task;
+}
+
 export async function getTask(orgId: string, projectId: string, taskId: string) {
   const task = await prisma.task.findFirst({
     where: { id: taskId, projectId, ...visible(orgId) },
@@ -159,6 +179,62 @@ export async function softDeleteTask(orgId: string, projectId: string, taskId: s
     data: { deletedAt: new Date() },
   });
   if (count === 0) throw new TaskNotFoundError();
+}
+
+export async function assignUser(
+  orgId: string,
+  projectId: string,
+  taskId: string,
+  userId: string,
+  assignedBy: string,
+) {
+  const task = await requireVisibleTask(orgId, projectId, taskId);
+  // Read through the orgs service, so "is a member of this org" is decided by the same
+  // row the request guard itself was authorized against.
+  if (!(await findMembership(orgId, userId))) throw new UserNotOrgMemberError();
+
+  try {
+    const { user, assigner, ...assignment } = await prisma.taskAssignment.create({
+      data: { taskId, userId, assignedBy },
+      select: {
+        taskId: true,
+        userId: true,
+        assignedBy: true,
+        createdAt: true,
+        user: { select: { email: true } },
+        assigner: { select: { name: true } },
+      },
+    });
+
+    const email: AssignmentEmail = {
+      taskId,
+      taskTitle: task.title,
+      assigneeId: userId,
+      assigneeEmail: user.email,
+      assignerId: assignedBy,
+      assignerName: assigner.name,
+      orgId,
+    };
+
+    return { assignment, email };
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new AlreadyAssignedError();
+    }
+    throw err;
+  }
+}
+
+export async function unassignUser(
+  orgId: string,
+  projectId: string,
+  taskId: string,
+  userId: string,
+) {
+  await requireVisibleTask(orgId, projectId, taskId);
+
+  const { count } = await prisma.taskAssignment.deleteMany({ where: { taskId, userId } });
+  if (count === 0) throw new AssignmentNotFoundError();
 }
 
 // Ids outside the org, already deleted, or in a deleted project simply do not match:

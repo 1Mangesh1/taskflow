@@ -8,6 +8,7 @@ import {
 import { config } from './config.js';
 import { AppError } from './lib/errors.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { jobRoutes } from './modules/jobs/routes.js';
 import { orgRoutes } from './modules/orgs/routes.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerOrgContext } from './plugins/org.js';
@@ -67,6 +68,7 @@ export function buildApp() {
   app.get('/health', async () => ({ status: 'ok' }));
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(orgRoutes, { prefix: '/api/orgs' });
+  app.register(jobRoutes, { prefix: '/api/jobs' });
 
   return app;
 }

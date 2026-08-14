@@ -64,6 +64,17 @@ const taskDetailResponse = taskResponse.extend({
   commentCount: z.number(),
 });
 
+export const assigneeBody = z.object({ userId: z.uuid() });
+const assignmentResponse = z.object({
+  taskId: z.uuid(),
+  userId: z.uuid(),
+  assignedBy: z.uuid(),
+  createdAt: z.date(),
+  // The id of the notification job, for GET /api/jobs/:id. Null when the enqueue failed:
+  // the assignment itself is committed either way.
+  jobId: z.string().nullable(),
+});
+
 // Both plugins are registered inside the org-scoped plugin in ../orgs/routes.ts, whose
 // preHandler hook resolves request.org from the caller's own membership: no route here
 // can be reached without that check, and none of them ever reads an org id from the
@@ -122,6 +133,20 @@ export const projectTaskRoutes: FastifyPluginAsyncZod = async (app) => {
   );
 
   app.delete('/:taskId', { schema: { params: taskParams } }, controller.remove);
+
+  app.post(
+    '/:taskId/assignees',
+    {
+      schema: { params: taskParams, body: assigneeBody, response: { 201: assignmentResponse } },
+    },
+    controller.assign,
+  );
+
+  app.delete(
+    '/:taskId/assignees/:userId',
+    { schema: { params: taskParams.extend({ userId: z.uuid() }) } },
+    controller.unassign,
+  );
 };
 
 export const orgTaskRoutes: FastifyPluginAsyncZod = async (app) => {

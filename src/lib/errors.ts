@@ -80,3 +80,33 @@ export class TaskNotFoundError extends AppError {
     super(404, 'TASK_NOT_FOUND', 'Task not found');
   }
 }
+
+export class UserNotOrgMemberError extends AppError {
+  constructor() {
+    super(400, 'USER_NOT_ORG_MEMBER', 'Assignee is not a member of this organization');
+  }
+}
+
+export class AlreadyAssignedError extends AppError {
+  constructor() {
+    super(409, 'ALREADY_ASSIGNED', 'User is already assigned to this task');
+  }
+}
+
+export class AssignmentNotFoundError extends AppError {
+  constructor() {
+    super(404, 'ASSIGNMENT_NOT_FOUND', 'User is not assigned to this task');
+  }
+}
+
+export class CommentNotFoundError extends AppError {
+  constructor() {
+    super(404, 'COMMENT_NOT_FOUND', 'Comment not found');
+  }
+}
+
+export class JobNotFoundError extends AppError {
+  constructor() {
+    super(404, 'JOB_NOT_FOUND', 'Job not found');
+  }
+}

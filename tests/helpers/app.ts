@@ -29,3 +29,27 @@ export const createProject = (app: FastifyInstance, orgId: string, userId: strin
       body: { name },
     })
     .then((res) => res.json<{ id: string }>());
+
+export const addMember = (app: FastifyInstance, orgId: string, adminId: string, email: string) =>
+  app.inject({
+    method: 'POST',
+    url: `/api/orgs/${orgId}/members`,
+    headers: asUser(app, adminId),
+    body: { email, role: 'member' },
+  });
+
+export const createTask = (
+  app: FastifyInstance,
+  orgId: string,
+  projectId: string,
+  userId: string,
+  title: string,
+) =>
+  app
+    .inject({
+      method: 'POST',
+      url: `/api/orgs/${orgId}/projects/${projectId}/tasks`,
+      headers: asUser(app, userId),
+      body: { title },
+    })
+    .then((res) => res.json<{ id: string }>());
