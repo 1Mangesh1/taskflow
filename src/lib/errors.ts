@@ -68,3 +68,9 @@ export class LastAdminError extends AppError {
     super(409, 'LAST_ADMIN', 'An organization must keep at least one admin');
   }
 }
+
+export class ProjectNotFoundError extends AppError {
+  constructor() {
+    super(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  }
+}

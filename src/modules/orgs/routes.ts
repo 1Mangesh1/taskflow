@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { projectRoutes } from '../projects/routes.js';
 import * as controller from './controller.js';
 
 const orgRole = z.enum(['org_admin', 'member']);
@@ -64,6 +65,10 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
     { preHandler: app.requireOrgAdmin, schema: { params: memberParams } },
     controller.removeMember,
   );
+
+  // Child plugins inherit the membership hook above, so mounting a module here is what
+  // makes its routes org-scoped.
+  app.register(projectRoutes, { prefix: '/projects' });
 };
 
 export const orgRoutes: FastifyPluginAsyncZod = async (app) => {
