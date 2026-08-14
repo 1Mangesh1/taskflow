@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { config } from '../config.js';
+import { QueueUnavailableError } from './errors.js';
 
 // Everything the worker needs to send the mail: a job never reads the database, so a
 // task renamed or a member removed after the assignment cannot change the notification.
@@ -24,13 +25,22 @@ const connection = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
 
 export const emailQueue = new Queue<AssignmentEmail>('email', { connection });
 
-// An add issued while Redis is down is buffered rather than rejected, so the wait is
-// bounded here and the caller is told the enqueue did not happen. The buffered job
-// still lands whenever Redis comes back, which is a late notification rather than a
-// lost one.
+// A command issued while Redis is down is buffered rather than rejected, so every call
+// a request waits on has to carry its own deadline: an unbounded one leaves the handler
+// with nothing to answer for as long as the outage lasts. A buffered add still lands
+// whenever Redis comes back, which is a late notification rather than a lost one.
 // ponytail: a buffered add that fails minutes later goes unlogged; a queue error
 // listener is the upgrade if that ever has to be visible.
-const ENQUEUE_TIMEOUT_MS = 1000;
+const QUEUE_TIMEOUT_MS = 1000;
+
+export function withQueueDeadline<T>(work: Promise<T>) {
+  return Promise.race([
+    work,
+    delay(QUEUE_TIMEOUT_MS, null, { ref: false }).then(() => {
+      throw new QueueUnavailableError();
+    }),
+  ]);
+}
 
 export function enqueueAssignmentEmail(email: AssignmentEmail) {
   const queued = emailQueue
@@ -48,12 +58,7 @@ export function enqueueAssignmentEmail(email: AssignmentEmail) {
     })
     .then((job) => job.id ?? null);
 
-  return Promise.race([
-    queued,
-    delay(ENQUEUE_TIMEOUT_MS, null, { ref: false }).then(() => {
-      throw new Error(`task-assigned enqueue timed out after ${ENQUEUE_TIMEOUT_MS} ms`);
-    }),
-  ]);
+  return withQueueDeadline(queued);
 }
 
 // The queue does not own the connection it was handed, so closing it is not enough:

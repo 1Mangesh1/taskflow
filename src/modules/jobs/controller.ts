@@ -1,7 +1,7 @@
 import type { JobState } from 'bullmq';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { JobNotFoundError } from '../../lib/errors.js';
-import { emailQueue } from '../../lib/queue.js';
+import { emailQueue, withQueueDeadline } from '../../lib/queue.js';
 
 // The four statuses the API contract exposes. Every way BullMQ has of saying "not
 // started yet" is one of them from the caller's side, so they all collapse to pending.
@@ -27,10 +27,13 @@ export async function get(
   // marker, id) are not hashes, so Redis answers WRONGTYPE instead of "no such job".
   if (!/^\d+$/.test(request.params.id)) throw new JobNotFoundError();
 
-  const job = await emailQueue.getJob(request.params.id);
+  // Both reads are on a deadline. A poller is the whole point of this endpoint, and a
+  // Redis outage would otherwise leave every poll waiting on a buffered command with no
+  // upper bound, one held socket each.
+  const job = await withQueueDeadline(emailQueue.getJob(request.params.id));
   if (!job) throw new JobNotFoundError();
 
-  const state = await job.getState();
+  const state = await withQueueDeadline(job.getState());
   // The job was removed between the two reads, which is the same answer as never
   // having existed.
   if (state === 'unknown') throw new JobNotFoundError();

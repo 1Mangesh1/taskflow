@@ -110,3 +110,9 @@ export class JobNotFoundError extends AppError {
     super(404, 'JOB_NOT_FOUND', 'Job not found');
   }
 }
+
+export class QueueUnavailableError extends AppError {
+  constructor() {
+    super(503, 'QUEUE_UNAVAILABLE', 'Job queue is unavailable');
+  }
+}
