@@ -74,3 +74,9 @@ export class ProjectNotFoundError extends AppError {
     super(404, 'PROJECT_NOT_FOUND', 'Project not found');
   }
 }
+
+export class TaskNotFoundError extends AppError {
+  constructor() {
+    super(404, 'TASK_NOT_FOUND', 'Task not found');
+  }
+}

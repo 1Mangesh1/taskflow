@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { projectRoutes } from '../projects/routes.js';
+import { orgTaskRoutes, projectTaskRoutes } from '../tasks/routes.js';
 import * as controller from './controller.js';
 
 const orgRole = z.enum(['org_admin', 'member']);
@@ -69,6 +70,9 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
   // Child plugins inherit the membership hook above, so mounting a module here is what
   // makes its routes org-scoped.
   app.register(projectRoutes, { prefix: '/projects' });
+  app.register(projectTaskRoutes, { prefix: '/projects/:projectId/tasks' });
+  // Bulk update and search span the whole org rather than one project.
+  app.register(orgTaskRoutes, { prefix: '/tasks' });
 };
 
 export const orgRoutes: FastifyPluginAsyncZod = async (app) => {
