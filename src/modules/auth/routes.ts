@@ -55,5 +55,5 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/logout', { schema: { body: refreshTokenBody } }, controller.logout);
 
-  app.post('/logout-all', { preHandler: app.authenticate }, controller.logoutAll);
+  app.post('/logout-all', { onRequest: app.authenticate }, controller.logoutAll);
 };

@@ -81,7 +81,9 @@ test('two admins demoted at the same time cannot both succeed', async () => {
     ]),
   );
 
-  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(10);
+  // The code, not just the count: a deadlock or a pool timeout would also reject ten.
+  const rejections = results.filter((result) => result.status === 'rejected');
+  expect(rejections.map((rejection) => rejection.reason.code)).toEqual(Array(10).fill('LAST_ADMIN'));
   const admins = await prisma.orgMember.findMany({
     where: { role: 'org_admin' },
     select: { orgId: true },

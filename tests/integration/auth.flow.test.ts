@@ -255,10 +255,12 @@ test('a multibyte password is bounded by bytes, not characters', async () => {
   expect(loggedIn.statusCode).toBe(200);
 });
 
+// An unauthenticated route on purpose: authentication sits on onRequest, which runs
+// before the body is parsed, so an anonymous logout-all answers 401 and never gets here.
 test('an empty json body is a client error, not a server error', async () => {
   const res = await app.inject({
     method: 'POST',
-    url: '/api/auth/logout-all',
+    url: '/api/auth/logout',
     headers: { 'content-type': 'application/json' },
     payload: '',
   });
