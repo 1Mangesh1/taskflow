@@ -62,5 +62,7 @@ export async function deleteComment(
   if (!comment) throw new CommentNotFoundError();
   if (comment.authorId !== userId) throw new ForbiddenError('Only the author can delete a comment');
 
-  await prisma.comment.delete({ where: { id: commentId } });
+  // deleteMany, so a comment already deleted between the read above and here is a
+  // no-op rather than a P2025 the error handler would answer as a 500.
+  await prisma.comment.deleteMany({ where: { id: commentId } });
 }

@@ -131,6 +131,34 @@ test('only the author may delete a comment', async () => {
   expect(list.json()).toMatchObject({ data: [], total: 0 });
 });
 
+// A double-click sends the same DELETE twice: the loser of the race must read as an
+// ordinary 404, not as a driver error escaping the row-gone-since-we-looked window.
+test('racing deletes of one comment never answer 500', async () => {
+  const ids = await setup();
+  const statuses: number[] = [];
+
+  // Three comments, not one: the first burst hits a cold connection pool and is served
+  // one request at a time, so it never overlaps two deletes of the same row.
+  for (const body of ['I will take this one', 'Actually reassigning', 'Closing this out']) {
+    const { id } = (await comment(ids, ids.ben.id, body)).json<{ id: string }>();
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        app.inject({
+          method: 'DELETE',
+          url: commentsUrl(ids.acme.id, ids.project.id, ids.task.id, `/${id}`),
+          headers: asUser(app, ids.ben.id),
+        }),
+      ),
+    );
+    statuses.push(...responses.map((res) => res.statusCode));
+  }
+
+  // Which of the six win each race is timing, so only the answers are asserted: every
+  // caller is told the comment is gone, and none of them that the server broke.
+  expect(statuses.filter((status) => status !== 204 && status !== 404)).toEqual([]);
+  expect(statuses).toContain(204);
+});
+
 test('deleting a comment that is not there says so', async () => {
   const ids = await setup();
 
