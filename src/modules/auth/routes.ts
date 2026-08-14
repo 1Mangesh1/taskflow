@@ -25,6 +25,10 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
     '/register',
     {
       schema: {
+        tags: ['auth'],
+        summary: 'Register a user',
+        security: [],
+        errors: [400, 409],
         body: z.object({
           email: z.email(),
           password: password.min(8),
@@ -40,6 +44,10 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
     '/login',
     {
       schema: {
+        tags: ['auth'],
+        summary: 'Log in and receive an access and a refresh token',
+        security: [],
+        errors: [400, 401],
         body: z.object({ email: z.email(), password: password.min(1) }),
         response: { 200: tokensResponse.extend({ user: userResponse }) },
       },
@@ -49,11 +57,43 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post(
     '/refresh',
-    { schema: { body: refreshTokenBody, response: { 200: tokensResponse } } },
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Exchange a refresh token for a new pair, revoking the old one',
+        security: [],
+        errors: [400, 401],
+        body: refreshTokenBody,
+        response: { 200: tokensResponse },
+      },
+    },
     controller.refresh,
   );
 
-  app.post('/logout', { schema: { body: refreshTokenBody } }, controller.logout);
+  app.post(
+    '/logout',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Revoke one refresh token',
+        security: [],
+        errors: [400],
+        body: refreshTokenBody,
+      },
+    },
+    controller.logout,
+  );
 
-  app.post('/logout-all', { onRequest: app.authenticate }, controller.logoutAll);
+  app.post(
+    '/logout-all',
+    {
+      onRequest: app.authenticate,
+      schema: {
+        tags: ['auth'],
+        summary: 'Revoke every refresh token the caller holds',
+        errors: [401],
+      },
+    },
+    controller.logoutAll,
+  );
 };

@@ -27,6 +27,9 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
     '/members',
     {
       schema: {
+        tags: ['organizations'],
+        summary: 'List the members of an organization',
+        errors: [400, 401, 403],
         params: orgParams,
         response: {
           200: z.object({ data: z.array(memberResponse.extend({ joinedAt: z.date() })) }),
@@ -41,6 +44,9 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       preHandler: app.requireOrgAdmin,
       schema: {
+        tags: ['organizations'],
+        summary: 'Add a registered user to the organization',
+        errors: [400, 401, 403, 404, 409],
         params: orgParams,
         body: z.object({ email: z.email(), role: orgRole }),
         response: { 201: memberResponse },
@@ -54,6 +60,9 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       preHandler: app.requireOrgAdmin,
       schema: {
+        tags: ['organizations'],
+        summary: 'Change a member role',
+        errors: [400, 401, 403, 404, 409],
         params: memberParams,
         body: z.object({ role: orgRole }),
         response: { 200: z.object({ userId: z.uuid(), role: orgRole }) },
@@ -64,7 +73,15 @@ const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete(
     '/members/:userId',
-    { preHandler: app.requireOrgAdmin, schema: { params: memberParams } },
+    {
+      preHandler: app.requireOrgAdmin,
+      schema: {
+        tags: ['organizations'],
+        summary: 'Remove a member from the organization',
+        errors: [400, 401, 403, 404, 409],
+        params: memberParams,
+      },
+    },
     controller.removeMember,
   );
 
@@ -84,13 +101,28 @@ export const orgRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post(
     '/',
-    { schema: { body: z.object({ name: z.string().min(1) }), response: { 201: orgResponse } } },
+    {
+      schema: {
+        tags: ['organizations'],
+        summary: 'Create an organization, with the caller as its first admin',
+        errors: [400, 401],
+        body: z.object({ name: z.string().min(1) }),
+        response: { 201: orgResponse },
+      },
+    },
     controller.create,
   );
 
   app.get(
     '/',
-    { schema: { response: { 200: z.object({ data: z.array(orgResponse) }) } } },
+    {
+      schema: {
+        tags: ['organizations'],
+        summary: 'List the organizations the caller belongs to',
+        errors: [401],
+        response: { 200: z.object({ data: z.array(orgResponse) }) },
+      },
+    },
     controller.list,
   );
 

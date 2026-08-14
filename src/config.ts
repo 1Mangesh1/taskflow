@@ -7,6 +7,9 @@ const envSchema = z.object({
   REDIS_URL: z.url(),
   // HS256 keys shorter than the 256-bit hash output weaken the signature.
   JWT_SECRET: z.string().min(32),
+  // On by default so the API always ships its own reference. A deployment that does not
+  // want the schema and the try-it-out console reachable turns it off here.
+  DOCS_ENABLED: z.stringbool().default(true),
 });
 
 const parsed = envSchema.safeParse(process.env);

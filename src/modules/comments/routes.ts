@@ -20,7 +20,16 @@ const commentResponse = z.object({
 export const commentRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/',
-    { schema: { params: taskParams, body: commentBody, response: { 201: commentResponse } } },
+    {
+      schema: {
+        tags: ['comments'],
+        summary: 'Comment on a task',
+        errors: [400, 401, 403, 404],
+        params: taskParams,
+        body: commentBody,
+        response: { 201: commentResponse },
+      },
+    },
     controller.create,
   );
 
@@ -28,6 +37,9 @@ export const commentRoutes: FastifyPluginAsyncZod = async (app) => {
     '/',
     {
       schema: {
+        tags: ['comments'],
+        summary: 'List the comments on a task, oldest first',
+        errors: [400, 401, 403, 404],
         params: taskParams,
         querystring: paginationQuery,
         response: {
@@ -45,7 +57,14 @@ export const commentRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete(
     '/:commentId',
-    { schema: { params: taskParams.extend({ commentId: z.uuid() }) } },
+    {
+      schema: {
+        tags: ['comments'],
+        summary: 'Delete a comment, which only its author may do',
+        errors: [400, 401, 403, 404],
+        params: taskParams.extend({ commentId: z.uuid() }),
+      },
+    },
     controller.remove,
   );
 };

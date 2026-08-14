@@ -84,6 +84,9 @@ export const projectTaskRoutes: FastifyPluginAsyncZod = async (app) => {
     '/',
     {
       schema: {
+        tags: ['tasks'],
+        summary: 'Create a task in a project',
+        errors: [400, 401, 403, 404],
         params: projectParams,
         body: z.object({
           title,
@@ -100,13 +103,30 @@ export const projectTaskRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get(
     '/',
-    { schema: { params: projectParams, querystring: taskListQuery, response: { 200: taskPage } } },
+    {
+      schema: {
+        tags: ['tasks'],
+        summary: 'List the tasks of a project, filtered and paginated',
+        errors: [400, 401, 403, 404],
+        params: projectParams,
+        querystring: taskListQuery,
+        response: { 200: taskPage },
+      },
+    },
     controller.list,
   );
 
   app.get(
     '/:taskId',
-    { schema: { params: taskParams, response: { 200: taskDetailResponse } } },
+    {
+      schema: {
+        tags: ['tasks'],
+        summary: 'Get a task with its assignees and comment count',
+        errors: [400, 401, 403, 404],
+        params: taskParams,
+        response: { 200: taskDetailResponse },
+      },
+    },
     controller.get,
   );
 
@@ -114,6 +134,9 @@ export const projectTaskRoutes: FastifyPluginAsyncZod = async (app) => {
     '/:taskId',
     {
       schema: {
+        tags: ['tasks'],
+        summary: 'Update a task',
+        errors: [400, 401, 403, 404],
         params: taskParams,
         body: z
           .object({
@@ -132,19 +155,44 @@ export const projectTaskRoutes: FastifyPluginAsyncZod = async (app) => {
     controller.update,
   );
 
-  app.delete('/:taskId', { schema: { params: taskParams } }, controller.remove);
+  app.delete(
+    '/:taskId',
+    {
+      schema: {
+        tags: ['tasks'],
+        summary: 'Delete a task',
+        errors: [400, 401, 403, 404],
+        params: taskParams,
+      },
+    },
+    controller.remove,
+  );
 
   app.post(
     '/:taskId/assignees',
     {
-      schema: { params: taskParams, body: assigneeBody, response: { 201: assignmentResponse } },
+      schema: {
+        tags: ['tasks'],
+        summary: 'Assign an organization member to a task and queue their notification email',
+        errors: [400, 401, 403, 404, 409],
+        params: taskParams,
+        body: assigneeBody,
+        response: { 201: assignmentResponse },
+      },
     },
     controller.assign,
   );
 
   app.delete(
     '/:taskId/assignees/:userId',
-    { schema: { params: taskParams.extend({ userId: z.uuid() }) } },
+    {
+      schema: {
+        tags: ['tasks'],
+        summary: 'Unassign a member from a task',
+        errors: [400, 401, 403, 404],
+        params: taskParams.extend({ userId: z.uuid() }),
+      },
+    },
     controller.unassign,
   );
 };
@@ -154,6 +202,9 @@ export const orgTaskRoutes: FastifyPluginAsyncZod = async (app) => {
     '/bulk-status',
     {
       schema: {
+        tags: ['tasks'],
+        summary: 'Set the status of up to 100 tasks of the organization at once',
+        errors: [400, 401, 403],
         params: orgParams,
         body: z.object({ taskIds: z.array(z.uuid()).min(1).max(100), status }),
         response: { 200: z.object({ updated: z.number() }) },
@@ -164,7 +215,16 @@ export const orgTaskRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get(
     '/search',
-    { schema: { params: orgParams, querystring: searchQuery, response: { 200: taskPage } } },
+    {
+      schema: {
+        tags: ['tasks'],
+        summary: 'Full-text search the tasks of the organization by title and description',
+        errors: [400, 401, 403],
+        params: orgParams,
+        querystring: searchQuery,
+        response: { 200: taskPage },
+      },
+    },
     controller.search,
   );
 };

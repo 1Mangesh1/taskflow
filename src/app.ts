@@ -5,12 +5,14 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import { config } from './config.js';
 import { AppError } from './lib/errors.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { jobRoutes } from './modules/jobs/routes.js';
 import { orgRoutes } from './modules/orgs/routes.js';
 import { registerAuth } from './plugins/auth.js';
+import { registerDocs } from './plugins/docs.js';
 import { registerOrgContext } from './plugins/org.js';
 
 export function buildApp() {
@@ -64,8 +66,27 @@ export function buildApp() {
 
   registerAuth(app);
   registerOrgContext(app);
+  // Before the routes: the document is built from an onRoute hook, which only sees
+  // routes added after the plugin that installs it.
+  if (config.DOCS_ENABLED) registerDocs(app);
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  // Added from the boot queue rather than straight onto the instance, so it lands after
+  // the docs plugin above and is documented like every other route.
+  app.after(() => {
+    app.get(
+      '/health',
+      {
+        schema: {
+          tags: ['health'],
+          summary: 'Liveness probe',
+          security: [],
+          response: { 200: z.object({ status: z.literal('ok') }) },
+        },
+      },
+      async () => ({ status: 'ok' }) as const,
+    );
+  });
+
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(orgRoutes, { prefix: '/api/orgs' });
   app.register(jobRoutes, { prefix: '/api/jobs' });

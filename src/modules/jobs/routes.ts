@@ -11,6 +11,9 @@ export const jobRoutes: FastifyPluginAsyncZod = async (app) => {
     '/:id',
     {
       schema: {
+        tags: ['jobs'],
+        summary: 'Get the state of a queued notification email',
+        errors: [400, 401, 404, 503],
         params: z.object({ id: z.string().min(1) }),
         response: {
           200: z.object({

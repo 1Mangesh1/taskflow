@@ -1,0 +1,675 @@
+{
+  "info": {
+    "name": "TaskFlow API",
+    "description": "End-to-end walkthrough of the TaskFlow API against a local stack. Run the collection top to bottom with no environment file: it registers its own user under a randomized email and creates its own organization, project and task, so it never depends on seed data and a second run does not collide with the first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "demoEmail", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "orgId", "value": "" },
+    { "key": "projectId", "value": "" },
+    { "key": "taskId", "value": "" },
+    { "key": "commentId", "value": "" },
+    { "key": "jobId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "auth",
+      "item": [
+        {
+          "name": "Register a user",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address per run: the same collection run twice must not 409 on a taken email.",
+                  "const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);",
+                  "pm.collectionVariables.set('demoEmail', 'dana.reyes+' + suffix + '@taskflow.example');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('creates the user and echoes it back', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const user = pm.response.json().user;",
+                  "  pm.expect(user.id).to.be.a('string').and.to.have.lengthOf(36);",
+                  "  pm.expect(user.email).to.eql(pm.collectionVariables.get('demoEmail'));",
+                  "  pm.expect(user.name).to.eql('Dana Reyes');",
+                  "  pm.expect(user).to.not.have.property('passwordHash');",
+                  "  pm.collectionVariables.set('userId', user.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"Password123!\",\n  \"name\": \"Dana Reyes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Log in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns a token pair for the registered user', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.accessToken).to.be.a('string').and.to.not.be.empty;",
+                  "  pm.expect(body.refreshToken).to.be.a('string').and.to.not.be.empty;",
+                  "  pm.expect(body.user.id).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"Password123!\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "organizations",
+      "item": [
+        {
+          "name": "Create an organization",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('creates the org with the caller as its admin', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const org = pm.response.json();",
+                  "  pm.expect(org.id).to.be.a('string').and.to.have.lengthOf(36);",
+                  "  pm.expect(org.name).to.eql('Northwind Logistics');",
+                  "  pm.expect(org.role).to.eql('org_admin');",
+                  "  pm.collectionVariables.set('orgId', org.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Northwind Logistics\"\n}" }
+          }
+        },
+        {
+          "name": "List my organizations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('lists exactly the org this run created', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data).to.have.lengthOf(1);",
+                  "  pm.expect(data[0].id).to.eql(pm.collectionVariables.get('orgId'));",
+                  "  pm.expect(data[0].role).to.eql('org_admin');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs"]
+            }
+          }
+        },
+        {
+          "name": "List organization members",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the creator is the only member, as org_admin', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data).to.have.lengthOf(1);",
+                  "  pm.expect(data[0].userId).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.expect(data[0].email).to.eql(pm.collectionVariables.get('demoEmail'));",
+                  "  pm.expect(data[0].role).to.eql('org_admin');",
+                  "  pm.expect(Date.parse(data[0].joinedAt)).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "members"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects",
+      "item": [
+        {
+          "name": "Create a project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('creates the project', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const project = pm.response.json();",
+                  "  pm.expect(project.id).to.be.a('string').and.to.have.lengthOf(36);",
+                  "  pm.expect(project.name).to.eql('Warehouse Rollout');",
+                  "  pm.expect(project.description).to.eql('Q3 rollout of the new warehouse workflow.');",
+                  "  pm.collectionVariables.set('projectId', project.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "projects"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Warehouse Rollout\",\n  \"description\": \"Q3 rollout of the new warehouse workflow.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get a project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns the project just created', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const project = pm.response.json();",
+                  "  pm.expect(project.id).to.eql(pm.collectionVariables.get('projectId'));",
+                  "  pm.expect(project.name).to.eql('Warehouse Rollout');",
+                  "  pm.expect(Date.parse(project.updatedAt)).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "projects", "{{projectId}}"]
+            }
+          }
+        },
+        {
+          "name": "Project dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('a project with no tasks counts zero in every status', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.projectId).to.eql(pm.collectionVariables.get('projectId'));",
+                  "  pm.expect(body.total).to.eql(0);",
+                  "  pm.expect(body.counts).to.eql({ todo: 0, in_progress: 0, review: 0, done: 0 });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "projects", "{{projectId}}", "dashboard"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "item": [
+        {
+          "name": "Create a task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('creates the task in the project', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const task = pm.response.json();",
+                  "  pm.expect(task.id).to.be.a('string').and.to.have.lengthOf(36);",
+                  "  pm.expect(task.projectId).to.eql(pm.collectionVariables.get('projectId'));",
+                  "  pm.expect(task.title).to.eql('Publish the OpenAPI reference');",
+                  "  pm.expect(task.status).to.eql('todo');",
+                  "  pm.expect(task.priority).to.eql('high');",
+                  "  pm.expect(task.createdBy).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.collectionVariables.set('taskId', task.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "projects", "{{projectId}}", "tasks"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Publish the OpenAPI reference\",\n  \"description\": \"Generate the document from the route schemas and link it from the README.\",\n  \"status\": \"todo\",\n  \"priority\": \"high\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List tasks (filtered and paginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the filter matches the one task in the project', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.total).to.eql(1);",
+                  "  pm.expect(body.page).to.eql(1);",
+                  "  pm.expect(body.limit).to.eql(20);",
+                  "  pm.expect(body.data).to.have.lengthOf(1);",
+                  "  pm.expect(body.data[0].id).to.eql(pm.collectionVariables.get('taskId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks?status=todo&priority=high&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "projects", "{{projectId}}", "tasks"],
+              "query": [
+                { "key": "status", "value": "todo" },
+                { "key": "priority", "value": "high" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get a task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the task has no assignees and no comments yet', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const task = pm.response.json();",
+                  "  pm.expect(task.id).to.eql(pm.collectionVariables.get('taskId'));",
+                  "  pm.expect(task.assignees).to.eql([]);",
+                  "  pm.expect(task.commentCount).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks/{{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "orgs",
+                "{{orgId}}",
+                "projects",
+                "{{projectId}}",
+                "tasks",
+                "{{taskId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Assign a member to the task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('records the assignment and queues the notification email', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const assignment = pm.response.json();",
+                  "  pm.expect(assignment.taskId).to.eql(pm.collectionVariables.get('taskId'));",
+                  "  pm.expect(assignment.userId).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.expect(assignment.assignedBy).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.expect(assignment.jobId).to.be.a('string').and.to.not.be.empty;",
+                  "  pm.collectionVariables.set('jobId', assignment.jobId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks/{{taskId}}/assignees",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "orgs",
+                "{{orgId}}",
+                "projects",
+                "{{projectId}}",
+                "tasks",
+                "{{taskId}}",
+                "assignees"
+              ]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\"\n}" }
+          }
+        },
+        {
+          "name": "Search tasks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('full-text search finds the task by a word in its title', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.total).to.eql(1);",
+                  "  pm.expect(body.data).to.have.lengthOf(1);",
+                  "  pm.expect(body.data[0].id).to.eql(pm.collectionVariables.get('taskId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/tasks/search?q=OpenAPI&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "tasks", "search"],
+              "query": [
+                { "key": "q", "value": "OpenAPI" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bulk update task status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('moves the one task named in the request', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().updated).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/tasks/bulk-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orgs", "{{orgId}}", "tasks", "bulk-status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taskIds\": [\"{{taskId}}\"],\n  \"status\": \"in_progress\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "comments",
+      "item": [
+        {
+          "name": "Comment on a task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stores the comment against its author', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const comment = pm.response.json();",
+                  "  pm.expect(comment.id).to.be.a('string').and.to.have.lengthOf(36);",
+                  "  pm.expect(comment.body).to.eql('Draft is up, it still needs the security scheme before review.');",
+                  "  pm.expect(comment.author.id).to.eql(pm.collectionVariables.get('userId'));",
+                  "  pm.expect(comment.author.name).to.eql('Dana Reyes');",
+                  "  pm.collectionVariables.set('commentId', comment.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks/{{taskId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "orgs",
+                "{{orgId}}",
+                "projects",
+                "{{projectId}}",
+                "tasks",
+                "{{taskId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Draft is up, it still needs the security scheme before review.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List task comments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the thread holds the one comment just posted', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.total).to.eql(1);",
+                  "  pm.expect(body.page).to.eql(1);",
+                  "  pm.expect(body.data).to.have.lengthOf(1);",
+                  "  pm.expect(body.data[0].id).to.eql(pm.collectionVariables.get('commentId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orgs/{{orgId}}/projects/{{projectId}}/tasks/{{taskId}}/comments?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "orgs",
+                "{{orgId}}",
+                "projects",
+                "{{projectId}}",
+                "tasks",
+                "{{taskId}}",
+                "comments"
+              ],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "jobs",
+      "item": [
+        {
+          "name": "Get notification job status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the assignment email is in the queue', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const job = pm.response.json();",
+                  "  pm.expect(job.id).to.eql(pm.collectionVariables.get('jobId'));",
+                  "  pm.expect(job.name).to.eql('task-assigned');",
+                  "  // Any of the four is a pass: whether the worker has drained it yet is a race.",
+                  "  pm.expect(job.status).to.be.oneOf(['pending', 'active', 'completed', 'failed']);",
+                  "  pm.expect(job.attemptsMade).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Log out",
+      "description": "Last, so everything above runs with the token pair the login issued. Sits outside the folders because it has to close the run rather than lead the auth folder.",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('revokes the refresh token and answers with no content', function () {",
+              "  pm.response.to.have.status(204);",
+              "  pm.expect(pm.response.text()).to.eql('');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/logout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "logout"]
+        },
+        "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+      }
+    }
+  ]
+}

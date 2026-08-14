@@ -31,6 +31,9 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     '/',
     {
       schema: {
+        tags: ['projects'],
+        summary: 'Create a project',
+        errors: [400, 401, 403],
         params: orgParams,
         body: z.object({ name, description: description.optional() }),
         response: { 201: projectResponse.omit({ updatedAt: true }) },
@@ -43,6 +46,9 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     '/',
     {
       schema: {
+        tags: ['projects'],
+        summary: 'List the projects of an organization',
+        errors: [400, 401, 403],
         params: orgParams,
         querystring: paginationQuery,
         response: {
@@ -60,7 +66,15 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get(
     '/:projectId',
-    { schema: { params: projectParams, response: { 200: projectResponse } } },
+    {
+      schema: {
+        tags: ['projects'],
+        summary: 'Get a project',
+        errors: [400, 401, 403, 404],
+        params: projectParams,
+        response: { 200: projectResponse },
+      },
+    },
     controller.get,
   );
 
@@ -68,6 +82,9 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     '/:projectId',
     {
       schema: {
+        tags: ['projects'],
+        summary: 'Update a project',
+        errors: [400, 401, 403, 404],
         params: projectParams,
         body: z
           .object({ name: name.optional(), description: description.nullable().optional() })
@@ -80,7 +97,15 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete(
     '/:projectId',
-    { preHandler: app.requireOrgAdmin, schema: { params: projectParams } },
+    {
+      preHandler: app.requireOrgAdmin,
+      schema: {
+        tags: ['projects'],
+        summary: 'Soft delete a project and its tasks',
+        errors: [400, 401, 403, 404],
+        params: projectParams,
+      },
+    },
     controller.remove,
   );
 
@@ -88,6 +113,9 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     '/:projectId/dashboard',
     {
       schema: {
+        tags: ['projects'],
+        summary: 'Count the tasks of a project by status',
+        errors: [400, 401, 403, 404],
         params: projectParams,
         response: {
           200: z.object({ projectId: z.uuid(), counts: taskCounts, total: z.number() }),
