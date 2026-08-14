@@ -22,8 +22,10 @@ process.env.REDIS_URL = testRedisUrl;
 
 // Every test file that builds the app opens the shared Redis connection through the
 // queue module, and the queue does not own it: without this it outlives the last test
-// and keeps vitest from exiting.
+// and keeps vitest from exiting. Emptying the queue here rather than per file is what
+// leaves the next file, and the end of the run, with nothing left over from this one.
 afterAll(async () => {
-  const { closeQueue } = await import('../src/lib/queue.js');
+  const { closeQueue, emailQueue } = await import('../src/lib/queue.js');
+  await emailQueue.obliterate({ force: true });
   await closeQueue();
 });
