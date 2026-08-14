@@ -1,3 +1,21 @@
+# The api and the worker are the same image with different commands, and the worker
+# needs DATABASE_URL and JWT_SECRET only because it imports the shared config module.
+x-app: &app
+  image: taskflow
+  build: .
+  env_file: .env
+  # Overrides the host-facing values in .env: inside the network the databases answer on
+  # their service names, not on the loopback the ports are published to.
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://taskflow:taskflow@postgres:5432/taskflow
+    REDIS_URL: redis://redis:6379
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -24,6 +42,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  api:
+    <<: *app
+    # exec so the server, not the shell, is PID 1 and gets the SIGTERM it shuts down on.
+    command: sh -c "npx prisma migrate deploy && exec node dist/server.js"
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    <<: *app
+    command: node dist/worker.js
 
 volumes:
   postgres_data:
