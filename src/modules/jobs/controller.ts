@@ -21,6 +21,12 @@ export async function get(
   request: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply,
 ) {
+  // The producer never passes a custom jobId, so every id BullMQ hands out is a decimal
+  // counter value. Anything else has to be refused before the lookup: getJob HGETALLs
+  // bull:email:<id>, and the queue's own keys living in that namespace (wait, events,
+  // marker, id) are not hashes, so Redis answers WRONGTYPE instead of "no such job".
+  if (!/^\d+$/.test(request.params.id)) throw new JobNotFoundError();
+
   const job = await emailQueue.getJob(request.params.id);
   if (!job) throw new JobNotFoundError();
 

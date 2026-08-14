@@ -159,3 +159,22 @@ test('an unknown job id is a 404, and an anonymous caller never gets that far', 
   const anonymous = await app.inject({ method: 'GET', url: '/api/jobs/424242' });
   expect(anonymous.statusCode).toBe(401);
 });
+
+// The queue keeps its own bookkeeping under the same bull:email: prefix a job id is
+// looked up by, and these four are a list, a stream, a zset and a string rather than
+// the hash a job lookup expects. An id naming one of them is still an unknown job.
+test('an id that collides with a queue bookkeeping key is a 404, not a Redis error', async () => {
+  const ids = await setup();
+  await assign(ids, ids.alice.id, ids.ben.id);
+
+  for (const id of ['wait', 'events', 'marker', 'id']) {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/jobs/${id}`,
+      headers: asUser(app, ids.alice.id),
+    });
+
+    expect(res.statusCode, id).toBe(404);
+    expect(res.json().code, id).toBe('JOB_NOT_FOUND');
+  }
+});
