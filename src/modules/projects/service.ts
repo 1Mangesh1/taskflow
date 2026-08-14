@@ -67,8 +67,9 @@ export async function updateProject(orgId: string, projectId: string, patch: Pro
 }
 
 export async function softDeleteProject(orgId: string, projectId: string) {
-  // Tasks keep their own deleted_at: they are only reachable through their project,
-  // which this hides, and cascading would be an unbounded write behind a 204.
+  // Tasks keep their own deleted_at: cascading would be an unbounded write behind a 204.
+  // Consequence: tasks.org_id is denormalized, so an org-scoped task query (where: { orgId })
+  // still sees them and must add project: { deletedAt: null } itself.
   const { count } = await prisma.project.updateMany({
     where: visible(orgId, projectId),
     data: { deletedAt: new Date() },
