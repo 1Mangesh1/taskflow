@@ -21,9 +21,17 @@ export type AssignmentEmail = {
 // is deliberately left on: BullMQ runs one INFO on the connection when the Queue is
 // constructed and caches the result, so a client that fails commands while Redis is
 // down never finishes that handshake and stays broken after Redis comes back.
-const connection = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
+// Shared with the worker process, which is safe: BullMQ duplicates a connection it is
+// handed for its blocking fetch, so a waiting worker never stalls a queue command.
+export const connection = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
 
 export const emailQueue = new Queue<AssignmentEmail>('email', { connection });
+
+export type DeadLetteredEmail = AssignmentEmail & { failedReason: string };
+
+// Nothing consumes this queue: it is the record of a notification that never went out,
+// for an operator to read and replay by hand once the cause is fixed.
+export const emailDlq = new Queue<DeadLetteredEmail>('email-dlq', { connection });
 
 // A command issued while Redis is down is buffered rather than rejected, so every call
 // a request waits on has to carry its own deadline: an unbounded one leaves the handler
@@ -61,9 +69,10 @@ export function enqueueAssignmentEmail(email: AssignmentEmail) {
   return withQueueDeadline(queued);
 }
 
-// The queue does not own the connection it was handed, so closing it is not enough:
-// both have to go for the process to be able to exit.
+// The queues do not own the connection they were handed, so closing them is not
+// enough: all three have to go for the process to be able to exit.
 export async function closeQueue() {
   await emailQueue.close();
+  await emailDlq.close();
   await connection.quit();
 }

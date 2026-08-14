@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
+    "dev:worker": "tsx watch --env-file=.env src/worker.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:setup": "DATABASE_URL=$(node --env-file=.env -p process.env.TEST_DATABASE_URL) prisma migrate deploy",

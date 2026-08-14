@@ -25,7 +25,8 @@ process.env.REDIS_URL = testRedisUrl;
 // and keeps vitest from exiting. Emptying the queue here rather than per file is what
 // leaves the next file, and the end of the run, with nothing left over from this one.
 afterAll(async () => {
-  const { closeQueue, emailQueue } = await import('../src/lib/queue.js');
+  const { closeQueue, emailDlq, emailQueue } = await import('../src/lib/queue.js');
   await emailQueue.obliterate({ force: true });
+  await emailDlq.obliterate({ force: true });
   await closeQueue();
 });
