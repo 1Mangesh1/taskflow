@@ -114,7 +114,9 @@ export async function getTask(orgId: string, projectId: string, taskId: string) 
       ...taskFields,
       assignments: {
         select: { user: { select: { id: true, email: true, name: true } } },
-        orderBy: { createdAt: 'asc' },
+        // The id breaks ties: a batch of assignments written in one statement shares a
+        // created_at, which would leave the assignee order up to the planner.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       },
       _count: { select: { comments: true } },
     },

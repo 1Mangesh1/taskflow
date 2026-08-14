@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { TaskPriority, TaskStatus } from '../../src/generated/prisma/client.js';
-import { buildTestApp } from '../helpers/app.js';
+import { asUser, buildTestApp, createOrg, createProject } from '../helpers/app.js';
 import { createUser, prisma, truncateAll } from '../helpers/db.js';
 
 const NOT_FOUND = { error: expect.any(String), code: 'TASK_NOT_FOUND', details: {} };
@@ -11,31 +11,15 @@ const FORBIDDEN = { error: expect.any(String), code: 'FORBIDDEN', details: {} };
 
 let app: FastifyInstance;
 
-// Tokens are signed with the app's own key rather than obtained through
-// /api/auth/login: these tests are about tasks, and logging in would cost a bcrypt hash
-// per user and most of the auth rate limit budget.
-const asUser = (userId: string) => ({ authorization: `Bearer ${app.jwt.sign({ sub: userId })}` });
-
-const createOrg = (userId: string, name: string) =>
-  app
-    .inject({ method: 'POST', url: '/api/orgs', headers: asUser(userId), body: { name } })
-    .then((res) => res.json());
-
-const createProject = (orgId: string, userId: string, name: string) =>
-  app
-    .inject({
-      method: 'POST',
-      url: `/api/orgs/${orgId}/projects`,
-      headers: asUser(userId),
-      body: { name },
-    })
-    .then((res) => res.json());
-
 const tasksUrl = (orgId: string, projectId: string, query = '') =>
   `/api/orgs/${orgId}/projects/${projectId}/tasks${query}`;
 
 const listTasks = (orgId: string, projectId: string, userId: string, query = '') =>
-  app.inject({ method: 'GET', url: tasksUrl(orgId, projectId, query), headers: asUser(userId) });
+  app.inject({
+    method: 'GET',
+    url: tasksUrl(orgId, projectId, query),
+    headers: asUser(app, userId),
+  });
 
 const idsOf = (res: { json: () => { data: { id: string }[] } }) =>
   res.json().data.map((task) => task.id);
@@ -45,16 +29,16 @@ async function setup() {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
   const ben = await createUser('ben.okafor@acme-corp.example', 'Ben Okafor');
   const carla = await createUser('carla.mendes@acme-corp.example', 'Carla Mendes');
-  const acme = await createOrg(alice.id, 'Acme Corp');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
   for (const user of [ben, carla]) {
     await app.inject({
       method: 'POST',
       url: `/api/orgs/${acme.id}/members`,
-      headers: asUser(alice.id),
+      headers: asUser(app, alice.id),
       body: { email: user.email, role: 'member' },
     });
   }
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
 
   return { alice, ben, carla, acme, project };
 }
@@ -130,7 +114,7 @@ test('a task is created, read, listed, patched, and deleted', async () => {
   const created = await app.inject({
     method: 'POST',
     url: tasksUrl(acme.id, project.id),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: {
       title: 'Draft the new nav',
       description: 'Three levels deep, mobile first',
@@ -156,7 +140,7 @@ test('a task is created, read, listed, patched, and deleted', async () => {
   const read = await app.inject({
     method: 'GET',
     url: `${tasksUrl(acme.id, project.id)}/${id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   expect(read.statusCode).toBe(200);
   expect(read.json()).toMatchObject({
@@ -173,7 +157,7 @@ test('a task is created, read, listed, patched, and deleted', async () => {
   const patched = await app.inject({
     method: 'PATCH',
     url: `${tasksUrl(acme.id, project.id)}/${id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { status: 'in_progress', dueDate: null },
   });
   expect(patched.statusCode).toBe(200);
@@ -187,14 +171,14 @@ test('a task is created, read, listed, patched, and deleted', async () => {
   const deleted = await app.inject({
     method: 'DELETE',
     url: `${tasksUrl(acme.id, project.id)}/${id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   expect(deleted.statusCode).toBe(204);
 
   const gone = await app.inject({
     method: 'GET',
     url: `${tasksUrl(acme.id, project.id)}/${id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   expect(gone.statusCode).toBe(404);
   expect(gone.json()).toEqual(NOT_FOUND);
@@ -211,8 +195,25 @@ test('a task detail carries its assignees and how many comments it has', async (
     priority: 'high',
     dueDate: null,
   });
-  await assign(task.id, ben.id, alice.id);
-  await assign(task.id, carla.id, alice.id);
+  // Written in one statement so both rows share a created_at, and Carla's row is
+  // inserted first with the higher id: the order asserted below can only come from the
+  // id tiebreaker.
+  await prisma.taskAssignment.createMany({
+    data: [
+      {
+        id: '0199a1f0-9c1a-7c3e-8a4b-4d2f6a5c1e02',
+        taskId: task.id,
+        userId: carla.id,
+        assignedBy: alice.id,
+      },
+      {
+        id: '0199a1f0-9c1a-7c3e-8a4b-4d2f6a5c1e01',
+        taskId: task.id,
+        userId: ben.id,
+        assignedBy: alice.id,
+      },
+    ],
+  });
   await prisma.comment.createMany({
     data: [
       { taskId: task.id, authorId: ben.id, body: 'Started on the desktop breakpoint' },
@@ -223,7 +224,7 @@ test('a task detail carries its assignees and how many comments it has', async (
   const read = await app.inject({
     method: 'GET',
     url: `${tasksUrl(acme.id, project.id)}/${task.id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
 
   expect(read.statusCode).toBe(200);
@@ -369,8 +370,8 @@ test('the second page of a filtered list holds the five oldest matches', async (
 test('a task of another org is missing under your org and forbidden under theirs', async () => {
   const { alice, acme } = await setup();
   const dan = await createUser('dan.whitfield@globex.example', 'Dan Whitfield');
-  const globex = await createOrg(dan.id, 'Globex');
-  const theirProject = await createProject(globex.id, dan.id, 'Warehouse Sync');
+  const globex = await createOrg(app, dan.id, 'Globex');
+  const theirProject = await createProject(app, globex.id, dan.id, 'Warehouse Sync');
   const theirTask = await seedTask(globex.id, theirProject.id, dan.id, 0, {
     title: 'Reconcile the pallet counts',
     status: 'todo',
@@ -379,17 +380,21 @@ test('a task of another org is missing under your org and forbidden under theirs
   });
 
   const underOwnOrg = tasksUrl(acme.id, theirProject.id, `/${theirTask.id}`);
-  const read = await app.inject({ method: 'GET', url: underOwnOrg, headers: asUser(alice.id) });
+  const read = await app.inject({
+    method: 'GET',
+    url: underOwnOrg,
+    headers: asUser(app, alice.id),
+  });
   const patched = await app.inject({
     method: 'PATCH',
     url: underOwnOrg,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { status: 'done' },
   });
   const deleted = await app.inject({
     method: 'DELETE',
     url: underOwnOrg,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   for (const res of [read, patched, deleted]) {
     expect(res.statusCode).toBe(404);
@@ -399,7 +404,7 @@ test('a task of another org is missing under your org and forbidden under theirs
   const bulk = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { taskIds: [theirTask.id], status: 'done' },
   });
   expect(bulk.statusCode).toBe(200);
@@ -408,12 +413,12 @@ test('a task of another org is missing under your org and forbidden under theirs
   const underTheirOrg = await app.inject({
     method: 'GET',
     url: tasksUrl(globex.id, theirProject.id, `/${theirTask.id}`),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   const bulkUnderTheirOrg = await app.inject({
     method: 'POST',
     url: `/api/orgs/${globex.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { taskIds: [theirTask.id], status: 'done' },
   });
   for (const res of [underTheirOrg, bulkUnderTheirOrg]) {
@@ -430,7 +435,7 @@ test('a task of another org is missing under your org and forbidden under theirs
 
 test('a task whose project was deleted is gone from every read and from bulk updates', async () => {
   const { alice, acme, project } = await setup();
-  const doomed = await createProject(acme.id, alice.id, 'Mobile App');
+  const doomed = await createProject(app, acme.id, alice.id, 'Mobile App');
   const orphan = await seedTask(acme.id, doomed.id, alice.id, 0, {
     title: 'Wire up the push tokens',
     status: 'todo',
@@ -447,7 +452,7 @@ test('a task whose project was deleted is gone from every read and from bulk upd
   await app.inject({
     method: 'DELETE',
     url: `/api/orgs/${acme.id}/projects/${doomed.id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
 
   const listed = await listTasks(acme.id, doomed.id, alice.id);
@@ -457,7 +462,7 @@ test('a task whose project was deleted is gone from every read and from bulk upd
   const read = await app.inject({
     method: 'GET',
     url: tasksUrl(acme.id, doomed.id, `/${orphan.id}`),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
   expect(read.statusCode).toBe(404);
   expect(read.json()).toEqual(NOT_FOUND);
@@ -465,7 +470,7 @@ test('a task whose project was deleted is gone from every read and from bulk upd
   const created = await app.inject({
     method: 'POST',
     url: tasksUrl(acme.id, doomed.id),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { title: 'Wire up the deep links' },
   });
   expect(created.statusCode).toBe(404);
@@ -474,7 +479,7 @@ test('a task whose project was deleted is gone from every read and from bulk upd
   const bulk = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { taskIds: [orphan.id, kept.id], status: 'done' },
   });
   expect(bulk.json()).toEqual({ updated: 1 });
@@ -489,8 +494,8 @@ test('a task whose project was deleted is gone from every read and from bulk upd
 test('a bulk update applies to the ids the caller may touch and counts only those', async () => {
   const { alice, acme, project } = await setup();
   const dan = await createUser('dan.whitfield@globex.example', 'Dan Whitfield');
-  const globex = await createOrg(dan.id, 'Globex');
-  const theirProject = await createProject(globex.id, dan.id, 'Warehouse Sync');
+  const globex = await createOrg(app, dan.id, 'Globex');
+  const theirProject = await createProject(app, globex.id, dan.id, 'Warehouse Sync');
   const task = await seedFilterFixtures(acme.id, project.id, alice.id);
   const theirs = await seedTask(globex.id, theirProject.id, dan.id, 0, {
     title: 'Reconcile the pallet counts',
@@ -501,13 +506,13 @@ test('a bulk update applies to the ids the caller may touch and counts only thos
   await app.inject({
     method: 'DELETE',
     url: tasksUrl(acme.id, project.id, `/${task.banner.id}`),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
 
   const bulk = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: {
       taskIds: [
         task.nav.id,
@@ -558,7 +563,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const untitled = await app.inject({
     method: 'POST',
     url: tasksUrl(acme.id, project.id),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { description: 'No title given' },
   });
   expect(untitled.statusCode).toBe(400);
@@ -567,7 +572,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const blank = await app.inject({
     method: 'POST',
     url: tasksUrl(acme.id, project.id),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { title: '   ' },
   });
   expect(blank.statusCode).toBe(400);
@@ -575,7 +580,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const unknownStatus = await app.inject({
     method: 'POST',
     url: tasksUrl(acme.id, project.id),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { title: 'Draft the new nav', status: 'blocked' },
   });
   expect(unknownStatus.statusCode).toBe(400);
@@ -583,7 +588,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const empty = await app.inject({
     method: 'PATCH',
     url: tasksUrl(acme.id, project.id, `/${task.id}`),
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: {},
   });
   expect(empty.statusCode).toBe(400);
@@ -596,7 +601,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const emptyBulk = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { taskIds: [], status: 'done' },
   });
   expect(emptyBulk.statusCode).toBe(400);
@@ -605,7 +610,7 @@ test('an invalid filter, body, or empty patch is a validation error', async () =
   const oversizedBulk = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/tasks/bulk-status`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
     body: { taskIds: Array.from({ length: 101 }, () => randomUUID()), status: 'done' },
   });
   expect(oversizedBulk.statusCode).toBe(400);
@@ -627,14 +632,14 @@ test('any member may delete a task, unlike the project that holds it', async () 
   const deleted = await app.inject({
     method: 'DELETE',
     url: tasksUrl(acme.id, project.id, `/${task.id}`),
-    headers: asUser(ben.id),
+    headers: asUser(app, ben.id),
   });
   expect(deleted.statusCode).toBe(204);
 
   const again = await app.inject({
     method: 'DELETE',
     url: tasksUrl(acme.id, project.id, `/${task.id}`),
-    headers: asUser(ben.id),
+    headers: asUser(app, ben.id),
   });
   expect(again.statusCode).toBe(404);
   expect(again.json()).toEqual(NOT_FOUND);

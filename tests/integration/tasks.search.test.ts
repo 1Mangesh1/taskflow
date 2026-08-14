@@ -1,32 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, expect, test } from 'vitest';
-import { buildTestApp } from '../helpers/app.js';
+import { asUser, buildTestApp, createOrg, createProject } from '../helpers/app.js';
 import { createUser, prisma, truncateAll } from '../helpers/db.js';
 
 let app: FastifyInstance;
-
-const asUser = (userId: string) => ({ authorization: `Bearer ${app.jwt.sign({ sub: userId })}` });
-
-const createOrg = (userId: string, name: string) =>
-  app
-    .inject({ method: 'POST', url: '/api/orgs', headers: asUser(userId), body: { name } })
-    .then((res) => res.json());
-
-const createProject = (orgId: string, userId: string, name: string) =>
-  app
-    .inject({
-      method: 'POST',
-      url: `/api/orgs/${orgId}/projects`,
-      headers: asUser(userId),
-      body: { name },
-    })
-    .then((res) => res.json());
 
 const search = (orgId: string, userId: string, query: string) =>
   app.inject({
     method: 'GET',
     url: `/api/orgs/${orgId}/tasks/search?${query}`,
-    headers: asUser(userId),
+    headers: asUser(app, userId),
   });
 
 const titlesOf = (res: { json: () => { data: { title: string }[] } }) =>
@@ -56,8 +39,8 @@ afterEach(() => app.close());
 // more in a title: that is the whole point of the weighted search vector.
 test('a match in the title outranks a match in the description', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
   // The title match is inserted first on purpose: the id tiebreaker would put the
   // newer row first, so only the rank can produce the order asserted below.
   await seedTask(
@@ -84,8 +67,8 @@ test('a match in the title outranks a match in the description', async () => {
 
 test('the search reads the same stemmed english the index was built with', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
   await seedTask(acme.id, project.id, alice.id, 'Retrying failed payments', null);
 
   // Both sides are stemmed by the same english dictionary: "retry" finds "Retrying"
@@ -100,8 +83,8 @@ test('the search reads the same stemmed english the index was built with', async
 
 test('a term that matches nothing is an empty page, not an error', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
   await seedTask(acme.id, project.id, alice.id, 'Checkout flow rewrite', 'Bank redirects');
 
   const res = await search(acme.id, alice.id, 'q=warehouse');
@@ -113,11 +96,11 @@ test('a term that matches nothing is an empty page, not an error', async () => {
 test('the search is scoped to the org and skips deleted tasks and deleted projects', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
   const dan = await createUser('dan.whitfield@globex.example', 'Dan Whitfield');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const globex = await createOrg(dan.id, 'Globex');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
-  const doomed = await createProject(acme.id, alice.id, 'Mobile App');
-  const theirProject = await createProject(globex.id, dan.id, 'Warehouse Sync');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const globex = await createOrg(app, dan.id, 'Globex');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
+  const doomed = await createProject(app, acme.id, alice.id, 'Mobile App');
+  const theirProject = await createProject(app, globex.id, dan.id, 'Warehouse Sync');
 
   await seedTask(acme.id, project.id, alice.id, 'Checkout flow rewrite', 'Bank redirects');
   await seedTask(acme.id, project.id, alice.id, 'Checkout copy review', null, new Date());
@@ -126,7 +109,7 @@ test('the search is scoped to the org and skips deleted tasks and deleted projec
   await app.inject({
     method: 'DELETE',
     url: `/api/orgs/${acme.id}/projects/${doomed.id}`,
-    headers: asUser(alice.id),
+    headers: asUser(app, alice.id),
   });
 
   const mine = await search(acme.id, alice.id, 'q=checkout');
@@ -139,8 +122,8 @@ test('the search is scoped to the org and skips deleted tasks and deleted projec
 
 test('the search pages the same way every other list does', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
   await prisma.task.createMany({
     data: Array.from({ length: 25 }, (_, index) => ({
       orgId: acme.id,
@@ -163,7 +146,7 @@ test('the search pages the same way every other list does', async () => {
 
 test('a missing or blank search term is a validation error', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
 
   for (const query of ['', 'q=', 'q=%20%20%20', 'q=checkout&limit=101']) {
     const res = await search(acme.id, alice.id, query);
@@ -176,8 +159,8 @@ test('a missing or blank search term is a validation error', async () => {
 // whatever it contains stays search text.
 test('a search term shaped like an injection is just a search term', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
-  const acme = await createOrg(alice.id, 'Acme Corp');
-  const project = await createProject(acme.id, alice.id, 'Website Redesign');
+  const acme = await createOrg(app, alice.id, 'Acme Corp');
+  const project = await createProject(app, acme.id, alice.id, 'Website Redesign');
   await seedTask(acme.id, project.id, alice.id, 'Checkout flow rewrite', 'Bank redirects');
 
   const injection = await search(
