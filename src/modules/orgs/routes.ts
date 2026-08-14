@@ -14,6 +14,58 @@ const memberResponse = z.object({
   role: orgRole,
 });
 
+// Every route registered here is guarded by the membership hook below, which resolves
+// request.org from the caller's own membership row. Org-scoped routes must be added
+// inside this scope so membership can never be left unverified.
+const orgScopedRoutes: FastifyPluginAsyncZod = async (app) => {
+  app.addHook('preHandler', app.requireOrgMember);
+
+  app.get(
+    '/members',
+    {
+      schema: {
+        params: orgParams,
+        response: {
+          200: z.object({ data: z.array(memberResponse.extend({ joinedAt: z.date() })) }),
+        },
+      },
+    },
+    controller.listMembers,
+  );
+
+  app.post(
+    '/members',
+    {
+      preHandler: app.requireOrgAdmin,
+      schema: {
+        params: orgParams,
+        body: z.object({ email: z.email(), role: orgRole }),
+        response: { 201: memberResponse },
+      },
+    },
+    controller.addMember,
+  );
+
+  app.patch(
+    '/members/:userId',
+    {
+      preHandler: app.requireOrgAdmin,
+      schema: {
+        params: memberParams,
+        body: z.object({ role: orgRole }),
+        response: { 200: z.object({ userId: z.uuid(), role: orgRole }) },
+      },
+    },
+    controller.updateMemberRole,
+  );
+
+  app.delete(
+    '/members/:userId',
+    { preHandler: app.requireOrgAdmin, schema: { params: memberParams } },
+    controller.removeMember,
+  );
+};
+
 export const orgRoutes: FastifyPluginAsyncZod = async (app) => {
   // onRequest, not preHandler: schema validation runs in between, and an anonymous
   // caller must get 401 rather than feedback on a malformed id.
@@ -31,49 +83,5 @@ export const orgRoutes: FastifyPluginAsyncZod = async (app) => {
     controller.list,
   );
 
-  app.get(
-    '/:orgId/members',
-    {
-      preHandler: app.requireOrgMember,
-      schema: {
-        params: orgParams,
-        response: {
-          200: z.object({ data: z.array(memberResponse.extend({ joinedAt: z.date() })) }),
-        },
-      },
-    },
-    controller.listMembers,
-  );
-
-  app.post(
-    '/:orgId/members',
-    {
-      preHandler: app.requireOrgAdmin,
-      schema: {
-        params: orgParams,
-        body: z.object({ email: z.email(), role: orgRole }),
-        response: { 201: memberResponse },
-      },
-    },
-    controller.addMember,
-  );
-
-  app.patch(
-    '/:orgId/members/:userId',
-    {
-      preHandler: app.requireOrgAdmin,
-      schema: {
-        params: memberParams,
-        body: z.object({ role: orgRole }),
-        response: { 200: z.object({ userId: z.uuid(), role: orgRole }) },
-      },
-    },
-    controller.updateMemberRole,
-  );
-
-  app.delete(
-    '/:orgId/members/:userId',
-    { preHandler: app.requireOrgAdmin, schema: { params: memberParams } },
-    controller.removeMember,
-  );
+  app.register(orgScopedRoutes, { prefix: '/:orgId' });
 };

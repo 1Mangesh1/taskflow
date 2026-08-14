@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { OrgRole } from '../generated/prisma/client.js';
 import { ForbiddenError } from '../lib/errors.js';
-import { prisma } from '../lib/prisma.js';
+import { findMembership } from '../modules/orgs/service.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -23,10 +23,7 @@ export function registerOrgContext(app: FastifyInstance) {
     // Checked here too, so a route that forgets `params: orgParams` still gets a 403
     // instead of sending a malformed id to a uuid column and failing with a 500.
     const membership = z.uuid().safeParse(orgId).success
-      ? await prisma.orgMember.findUnique({
-          where: { orgId_userId: { orgId, userId: request.user.id } },
-          select: { orgId: true, role: true },
-        })
+      ? await findMembership(orgId, request.user.id)
       : null;
     // One answer for "not a member" and "no such org": a 404 here would let a caller
     // enumerate org ids.

@@ -3,12 +3,16 @@ import {
   AlreadyMemberError,
   LastAdminError,
   MemberNotFoundError,
+  UnauthorizedError,
   UserNotFoundError,
 } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 
 export type AddMemberInput = { email: string; role: OrgRole };
 export type MemberRoleInput = { role: OrgRole };
+
+const isForeignKeyViolation = (err: unknown) =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003';
 
 // Locks the org's admin rows for the rest of the transaction. Two concurrent
 // demotions would otherwise each see the other admin and leave the org with none;
@@ -19,10 +23,24 @@ const lockAdmins = (tx: Prisma.TransactionClient, orgId: string) =>
     WHERE org_id = ${orgId}::uuid AND role = 'org_admin'
     FOR UPDATE`;
 
+// Read by the org context plugin on every org-scoped request.
+export const findMembership = (orgId: string, userId: string) =>
+  prisma.orgMember.findUnique({
+    where: { orgId_userId: { orgId, userId } },
+    select: { orgId: true, role: true },
+  });
+
 export async function createOrg(userId: string, name: string) {
   return prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({ data: { name }, select: { id: true, name: true } });
-    await tx.orgMember.create({ data: { orgId: org.id, userId, role: 'org_admin' } });
+    try {
+      await tx.orgMember.create({ data: { orgId: org.id, userId, role: 'org_admin' } });
+    } catch (err) {
+      // An access token outliving its user: the membership foreign key is the first
+      // thing that notices, and the caller is unauthenticated rather than at fault.
+      if (isForeignKeyViolation(err)) throw new UnauthorizedError();
+      throw err;
+    }
     return { ...org, role: 'org_admin' as const };
   });
 }
@@ -71,6 +89,10 @@ export async function addMember(orgId: string, input: AddMemberInput) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new AlreadyMemberError();
     }
+    // The target user was deleted between the lookup and the insert: same answer as
+    // if the lookup itself had missed. The caller's own row cannot be the missing
+    // one here, since their membership row was already read to authorize this.
+    if (isForeignKeyViolation(err)) throw new UserNotFoundError();
     throw err;
   }
 

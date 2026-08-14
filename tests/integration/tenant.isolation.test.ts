@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import { buildTestApp } from '../helpers/app.js';
-import { createUser, truncateAll } from '../helpers/db.js';
+import { createUser, prisma, truncateAll } from '../helpers/db.js';
 
 const FORBIDDEN = { error: expect.any(String), code: 'FORBIDDEN', details: {} };
 
@@ -40,6 +40,23 @@ test('an org is created with its creator as admin and shows up in their list', a
   const listed = await app.inject({ method: 'GET', url: '/api/orgs', headers: asUser(alice.id) });
   expect(listed.statusCode).toBe(200);
   expect(listed.json()).toEqual({ data: [created.json()] });
+});
+
+// The token is signed and unexpired, so authentication passes; only the membership
+// insert notices the user is gone. That must not read as a server fault.
+test('a token whose user no longer exists cannot create an org', async () => {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/orgs',
+    headers: asUser('0199a1f0-9c1a-7c3e-8a4b-4d2f6a5c1e77'),
+    body: { name: 'Acme Corp' },
+  });
+
+  expect(res.statusCode).toBe(401);
+  expect(res.json()).toEqual({ error: expect.any(String), code: 'UNAUTHORIZED', details: {} });
+  // The failed insert must take the org with it: an org with no admin can never be
+  // read, managed, or deleted by anyone.
+  expect(await prisma.organization.count()).toBe(0);
 });
 
 test('a member of one org cannot read the members of another', async () => {
@@ -109,7 +126,7 @@ test('an org id that is not a uuid is forbidden on an unvalidated route', async 
   expect(res.json()).toEqual(FORBIDDEN);
 });
 
-test('a member without the admin role cannot add or remove members', async () => {
+test('a member without the admin role reads members but cannot manage them', async () => {
   const alice = await createUser('alice.navarro@acme-corp.example', 'Alice Navarro');
   const ben = await createUser('ben.okafor@acme-corp.example', 'Ben Okafor');
   const carla = await createUser('carla.mendes@acme-corp.example', 'Carla Mendes');
@@ -121,11 +138,22 @@ test('a member without the admin role cannot add or remove members', async () =>
     body: { email: ben.email, role: 'member' },
   });
 
+  const listed = await app.inject({
+    method: 'GET',
+    url: `/api/orgs/${acme.id}/members`,
+    headers: asUser(ben.id),
+  });
   const added = await app.inject({
     method: 'POST',
     url: `/api/orgs/${acme.id}/members`,
     headers: asUser(ben.id),
     body: { email: carla.email, role: 'member' },
+  });
+  const promoted = await app.inject({
+    method: 'PATCH',
+    url: `/api/orgs/${acme.id}/members/${ben.id}`,
+    headers: asUser(ben.id),
+    body: { role: 'org_admin' },
   });
   const removed = await app.inject({
     method: 'DELETE',
@@ -133,8 +161,15 @@ test('a member without the admin role cannot add or remove members', async () =>
     headers: asUser(ben.id),
   });
 
+  expect(listed.statusCode).toBe(200);
+  expect(listed.json().data.map((member: { userId: string }) => member.userId)).toEqual([
+    alice.id,
+    ben.id,
+  ]);
   expect(added.statusCode).toBe(403);
   expect(added.json()).toEqual(FORBIDDEN);
+  expect(promoted.statusCode).toBe(403);
+  expect(promoted.json()).toEqual(FORBIDDEN);
   expect(removed.statusCode).toBe(403);
   expect(removed.json()).toEqual(FORBIDDEN);
 });
