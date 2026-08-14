@@ -173,18 +173,9 @@ export async function bulkUpdateStatus(orgId: string, taskIds: string[], status:
   return { updated: count };
 }
 
-type TaskRow = {
-  id: string;
-  projectId: string;
-  title: string;
-  description: string | null;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate: Date | null;
-  createdBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
+// Derived, not restated: the raw SELECT below has to match what the list route returns,
+// so the row type follows taskFields instead of drifting from it.
+type TaskRow = Prisma.TaskGetPayload<{ select: typeof taskFields }>;
 
 export async function searchTasks(orgId: string, q: string, page: Pagination) {
   // The only raw SQL in the codebase: tsvector, ts_rank, and the weighting they read
