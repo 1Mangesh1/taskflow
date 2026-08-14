@@ -19,6 +19,7 @@ const errorDescriptions = {
   403: 'The caller is not a member of the organization, or lacks the org_admin role',
   404: 'No such resource, or none this caller can see',
   409: 'The request conflicts with the current state of the resource',
+  429: 'Too many auth requests from this IP',
   503: 'The job queue is unreachable',
 } as const;
 
