@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import {
   hasZodFastifySchemaValidationErrors,
@@ -14,6 +15,8 @@ import { orgRoutes } from './modules/orgs/routes.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerDocs } from './plugins/docs.js';
 import { registerOrgContext } from './plugins/org.js';
+
+const uiPage = new URL('../public/index.html', import.meta.url);
 
 export function buildApp() {
   const app = Fastify({ logger: config.NODE_ENV !== 'test' }).withTypeProvider<ZodTypeProvider>();
@@ -84,6 +87,12 @@ export function buildApp() {
         },
       },
       async () => ({ status: 'ok' }) as const,
+    );
+
+    // Served from this process so the console shares the API's origin: no CORS setup, and
+    // no static-file dependency for one page.
+    app.get('/ui', { schema: { hide: true } }, async (_request, reply) =>
+      reply.type('text/html').send(readFileSync(uiPage)),
     );
   });
 

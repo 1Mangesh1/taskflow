@@ -10,6 +10,7 @@ FROM deps AS build
 COPY tsconfig.json prisma.config.ts ./
 COPY prisma ./prisma
 COPY src ./src
+COPY public ./public
 # src/generated/prisma is gitignored, so the client has to be generated here before tsc
 # has anything to compile against. prisma.config.ts resolves the datasource url eagerly,
 # so generate needs a DATABASE_URL to be set even though it never opens a connection.
@@ -24,6 +25,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/public ./public
 # prisma.config.ts carries the datasource url: schema.prisma has no url of its own, so
 # migrate deploy needs both files.
 COPY package.json prisma.config.ts ./
