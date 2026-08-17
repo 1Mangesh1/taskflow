@@ -9,8 +9,8 @@ services:
     buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     # migrate deploy applies pending migrations only, so a redeploy is a no-op once the
     # schema is current. exec hands the container's signal straight to node.
-    # The free plan has no shell to seed from, so boot does it. SEED_ONLY_IF_EMPTY makes
-    # the seed a no-op on every boot after the first, so restarts keep live data.
+    # The free plan has no shell to seed from, so boot does it. SEED_ONLY_IF_MISSING makes
+    # the seed a no-op once the demo accounts exist, so restarts keep live data.
     startCommand: npx prisma migrate deploy && npx prisma db seed && exec node dist/server.js
     healthCheckPath: /health
     envVars:
@@ -32,7 +32,7 @@ services:
       # runs dist/worker.js separately, as docker-compose.yml does.
       - key: RUN_WORKER
         value: true
-      - key: SEED_ONLY_IF_EMPTY
+      - key: SEED_ONLY_IF_MISSING
         value: true
       - key: DOCS_ENABLED
         value: true
