@@ -67,6 +67,31 @@ export function buildApp() {
     reply.status(404).send({ error: 'Not found', code: 'NOT_FOUND', details: {} }),
   );
 
+  // Browser clients on another origin (the console on GitHub Pages) need CORS. Bearer
+  // tokens are sent in a header, not a cookie, so no credentials flag is involved.
+  const allowedOrigins = config.CORS_ORIGINS.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.length) {
+    app.addHook('onRequest', async (request, reply) => {
+      const origin = request.headers.origin;
+      if (!origin || !allowedOrigins.includes(origin)) return;
+      reply.headers({
+        'access-control-allow-origin': origin,
+        vary: 'Origin',
+      });
+      if (request.method !== 'OPTIONS') return;
+      reply
+        .headers({
+          'access-control-allow-methods': 'GET,POST,PATCH,DELETE',
+          'access-control-allow-headers': 'authorization,content-type',
+          'access-control-max-age': '86400',
+        })
+        .code(204)
+        .send();
+    });
+  }
+
   registerAuth(app);
   registerOrgContext(app);
   // Before the routes: the document is built from an onRoute hook, which only sees
