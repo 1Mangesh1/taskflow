@@ -10,6 +10,14 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const days = (n: number) => new Date(Date.now() + n * 86_400_000)
 
 async function main() {
+  // Hosts without a shell seed from the start command, which runs on every boot. This
+  // makes that safe: the wipe below is skipped once the database holds anything, so a
+  // restart cannot discard what the running instance created.
+  if (process.env.SEED_ONLY_IF_EMPTY === 'true' && (await prisma.user.count()) > 0) {
+    console.log('Seed skipped: database already holds users')
+    return
+  }
+
   // Wipe in FK-safe order: org cascade clears all org-scoped rows (incl. tasks,
   // whose created_by RESTRICT would otherwise block user deletion).
   await prisma.organization.deleteMany()

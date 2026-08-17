@@ -41,6 +41,12 @@ export const emailWorker = new Worker<AssignmentEmail>(
   },
 );
 
+// Same reason as the connection listener in lib/queue.ts: BullMQ surfaces connection
+// trouble as an 'error' event, and an unheard one ends the process.
+emailWorker.on('error', (err) =>
+  console.error(JSON.stringify({ level: 'error', msg: 'worker error', error: err.message })),
+);
+
 // attemptsMade is already incremented when this fires, so it only reaches the job's
 // ceiling on the last attempt: every earlier failure is on its way back to the queue
 // and dead-lettering it there would file a job that is still going to be delivered.

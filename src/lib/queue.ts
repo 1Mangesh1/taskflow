@@ -25,6 +25,13 @@ export type AssignmentEmail = {
 // handed for its blocking fetch, so a waiting worker never stalls a queue command.
 export const connection = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
 
+// An 'error' event with no listener is a process-ending throw in Node, and a hosted
+// Redis drops connections routinely. Logging keeps a blip from taking the API with it;
+// ioredis reconnects on its own.
+connection.on('error', (err) =>
+  console.error(JSON.stringify({ level: 'error', msg: 'redis connection error', error: err.message })),
+);
+
 export const emailQueue = new Queue<AssignmentEmail>('email', { connection });
 
 export type DeadLetteredEmail = AssignmentEmail & { failedReason: string };
