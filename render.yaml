@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: taskflow-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npx prisma generate && npm run build
+    # migrate deploy applies pending migrations only, so a redeploy is a no-op once the
+    # schema is current. exec hands the container's signal straight to node.
+    startCommand: npx prisma migrate deploy && exec node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: taskflow-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: taskflow-queue
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      # The free plan has no background worker service, so the API process runs the
+      # queue consumer too. Anything with room for a second process leaves this off and
+      # runs dist/worker.js separately, as docker-compose.yml does.
+      - key: RUN_WORKER
+        value: true
+      - key: DOCS_ENABLED
+        value: true
+      # The browser console on GitHub Pages calls this API cross-origin. Replace with
+      # your own Pages origin, or clear it if you only use the copy served at /ui.
+      - key: CORS_ORIGINS
+        value: https://mangeshbide.tech
+
+  - type: keyvalue
+    name: taskflow-queue
+    plan: free
+    region: oregon
+    # Internal-only: nothing outside the Render network needs to reach the queue.
+    ipAllowList: []
+    # BullMQ stores jobs as ordinary keys. Under the default allkeys-lru the instance
+    # would evict queued jobs to free memory, silently dropping notifications.
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: taskflow-db
+    plan: free
+    region: oregon
+    databaseName: taskflow
+    user: taskflow

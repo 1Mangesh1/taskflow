@@ -132,6 +132,32 @@ GET    /api/jobs/:id                               GET    /health
 List endpoints answer with `{ "data": [], "total": 0, "page": 1, "limit": 20 }`. Every handled failure
 answers with `{ "error": "Task not found", "code": "TASK_NOT_FOUND", "details": {} }`.
 
+## Deploying to Render
+
+`render.yaml` is a Blueprint: point Render at this repo (New > Blueprint) and it creates the
+API web service, a free Postgres database, and a free Key Value instance for the queue,
+generating `JWT_SECRET` itself. Migrations run on every deploy via `prisma migrate deploy`.
+Seed the demo data once from the service shell with `npx prisma db seed`.
+
+Two constraints of the free plan shape this blueprint:
+
+- **No background workers.** They start at the paid tier, so `RUN_WORKER=true` makes the API
+  process consume the queue as well. Compose still runs the two processes separately, which
+  is the arrangement to use anywhere with room for it.
+- **Free Postgres expires 30 days after creation** (then a 14-day grace period). For a
+  long-lived demo, point `DATABASE_URL` at an external free Postgres such as Neon and
+  `REDIS_URL` at an external Redis such as Upstash, and delete the `databases` block and
+  the `keyvalue` service from the blueprint. Render's free Key Value is in-memory only and
+  loses queued jobs on restart, which is the other reason to move it.
+
+Free web services also sleep after 15 minutes of inactivity, so the first request afterwards
+waits about a minute for the cold start. An uptime monitor pinging `/health` every 5 minutes
+keeps it warm within the 750 free instance-hours a month.
+
+The browser console is hosted separately on GitHub Pages and calls the API cross-origin, so
+`CORS_ORIGINS` must list that origin exactly. Leave it empty when using the copy the API
+serves at `/ui`.
+
 ## Testing
 
 ```bash

@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { Worker } from 'bullmq';
 import { type AssignmentEmail, closeQueue, connection, emailDlq } from './lib/queue.js';
 
@@ -65,14 +66,20 @@ emailWorker.on('failed', async (job, err) => {
 // A container stop is a signal, not a call to close(): the worker goes first so a job
 // in flight is finished rather than left for the stalled checker to find, then the
 // connection it shares with the queues.
-const shutdown = () =>
-  emailWorker
-    .close()
-    .then(closeQueue)
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
+//
+// Only when this file is the process entrypoint. Imported instead (RUN_WORKER, tests),
+// a second set of handlers would race the importer's own shutdown over the shared
+// connection, and closing it from under an unfinished chain hangs the exit.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const shutdown = () =>
+    emailWorker
+      .close()
+      .then(closeQueue)
+      .catch((err) => {
+        console.error(err);
+        process.exit(1);
+      });
 
-process.once('SIGTERM', shutdown);
-process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}

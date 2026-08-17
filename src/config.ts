@@ -13,6 +13,9 @@ const envSchema = z.object({
   // Comma-separated origins allowed to call the API from a browser. Empty means the API
   // only answers same-origin callers, which is every deployment that serves /ui itself.
   CORS_ORIGINS: z.string().default(''),
+  // Runs the queue worker inside the API process, for hosts that offer only one process.
+  // Deployments with room for two (docker compose) leave this off and run src/worker.ts.
+  RUN_WORKER: z.stringbool().default(false),
 });
 
 const parsed = envSchema.safeParse(process.env);
