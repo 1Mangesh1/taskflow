@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskFlow test console</title>
+<style>
+  :root {
+    --bg: #12131a; --panel: #1b1d27; --line: #2b2e3d; --text: #e6e7ee;
+    --muted: #8f93a6; --accent: #6f8cff; --ok: #3fb950; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header span { color: var(--muted); font-size: 12px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 16px;
+  }
+  section[hidden] { display: none; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button, textarea {
+    font: inherit; border-radius: 6px; border: 1px solid var(--line);
+    background: #0e0f16; color: var(--text); padding: 7px 10px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { background: var(--accent); border-color: var(--accent); color: #0b0d14;
+           font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; color: var(--text); border-color: var(--line); font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #22252f; }
+  tbody tr[aria-selected="true"] { background: #262a3a; }
+  .tag { font-size: 12px; padding: 1px 7px; border-radius: 999px;
+         border: 1px solid var(--line); color: var(--muted); }
+  .empty { color: var(--muted); padding: 8px; }
+  #log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    background: #0e0f16; border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px; max-height: 220px; overflow: auto; white-space: pre-wrap;
+  }
+  #log div { padding: 1px 0; }
+  .ok { color: var(--ok); } .err { color: var(--err); } .dim { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>TaskFlow test console</h1>
+  <span id="who">not signed in</span>
+  <span style="margin-left:auto"><a href="/docs" style="color:var(--accent)">OpenAPI docs</a></span>
+</header>
+
+<main>
+  <section id="auth">
+    <h2>Sign in</h2>
+    <div class="row">
+      <input id="email" type="email" size="34" value="alice.whitfield@acme-corp.example">
+      <input id="password" type="password" value="Password123!">
+      <button id="login">Log in</button>
+      <button id="logout" class="ghost" hidden>Log out</button>
+    </div>
+  </section>
+
+  <section id="orgs" hidden>
+    <h2>Organizations</h2>
+    <table><thead><tr><th>Name</th><th>Role</th><th>Id</th></tr></thead><tbody id="orgRows"></tbody></table>
+  </section>
+
+  <section id="projects" hidden>
+    <h2>Projects</h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="projectName" placeholder="New project name" size="28">
+      <button id="createProject">Create</button>
+    </div>
+    <table><thead><tr><th>Name</th><th>Description</th><th>Tasks by status</th></tr></thead><tbody id="projectRows"></tbody></table>
+  </section>
+
+  <section id="tasks" hidden>
+    <h2>Tasks</h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="taskTitle" placeholder="New task title" size="26">
+      <select id="taskStatus">
+        <option value="todo">todo</option><option value="in_progress">in_progress</option>
+        <option value="review">review</option><option value="done">done</option>
+      </select>
+      <select id="taskPriority">
+        <option value="low">low</option><option value="medium" selected>medium</option>
+        <option value="high">high</option><option value="urgent">urgent</option>
+      </select>
+      <button id="createTask">Create</button>
+      <span style="margin-left:auto"></span>
+      <select id="filterStatus">
+        <option value="">all statuses</option><option value="todo">todo</option>
+        <option value="in_progress">in_progress</option><option value="review">review</option>
+        <option value="done">done</option>
+      </select>
+      <input id="search" placeholder="Full-text search" size="18">
+      <button id="doSearch" class="ghost">Search</button>
+    </div>
+    <table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Due</th></tr></thead><tbody id="taskRows"></tbody></table>
+  </section>
+
+  <section id="assign" hidden>
+    <h2>Assign selected task</h2>
+    <div class="row">
+      <span id="assignTask" class="tag"></span>
+      <span id="assignees" class="dim"></span>
+      <select id="member"></select>
+      <button id="doAssign">Assign</button>
+      <span id="jobState" class="dim"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Request log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const state = { token: null, orgId: null, projectId: null, taskId: null };
+
+function log(method, path, status, note = '') {
+  const line = document.createElement('div');
+  const cls = status >= 200 && status < 300 ? 'ok' : 'err';
+  line.innerHTML = `<span class="${cls}">${status}</span> <span class="dim">${method}</span> ${path} ${note}`;
+  $('log').prepend(line);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: {
+      ...(body ? { 'content-type': 'application/json' } : {}),
+      ...(state.token ? { authorization: `Bearer ${state.token}` } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  log(method, path, res.status, res.ok ? '' : (data?.code ?? ''));
+  if (!res.ok) throw new Error(data?.error ?? res.statusText);
+  return data;
+}
+
+$('login').onclick = async () => {
+  try {
+    const out = await api('POST', '/api/auth/login', {
+      email: $('email').value, password: $('password').value,
+    });
+    state.token = out.accessToken;
+    $('who').textContent = `${out.user.name} <${out.user.email}>`;
+    $('logout').hidden = false;
+    await loadOrgs();
+  } catch (err) { $('who').textContent = err.message; }
+};
+
+$('logout').onclick = () => {
+  Object.assign(state, { token: null, orgId: null, projectId: null, taskId: null });
+  $('who').textContent = 'not signed in';
+  for (const id of ['orgs', 'projects', 'tasks', 'assign']) $(id).hidden = true;
+  $('logout').hidden = true;
+};
+
+async function loadOrgs() {
+  const { data } = await api('GET', '/api/orgs');
+  $('orgRows').innerHTML = '';
+  for (const org of data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${org.name}</td><td><span class="tag">${org.role}</span></td>
+                    <td class="dim">${org.id}</td>`;
+    tr.onclick = () => selectOrg(org.id, tr);
+    $('orgRows').append(tr);
+  }
+  $('orgs').hidden = false;
+  if (data.length) selectOrg(data[0].id, $('orgRows').firstElementChild);
+}
+
+async function selectOrg(orgId, row) {
+  state.orgId = orgId;
+  for (const tr of $('orgRows').children) tr.removeAttribute('aria-selected');
+  row?.setAttribute('aria-selected', 'true');
+  $('projects').hidden = false;
+  $('tasks').hidden = true;
+  $('assign').hidden = true;
+  await Promise.all([loadProjects(), loadMembers()]);
+}
+
+async function loadProjects() {
+  const { data } = await api('GET', `/api/orgs/${state.orgId}/projects`);
+  $('projectRows').innerHTML = data.length ? '' : '<tr><td colspan="3" class="empty">No projects yet</td></tr>';
+  for (const project of data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${project.name}</td><td class="dim">${project.description ?? ''}</td><td class="dim">-</td>`;
+    tr.onclick = () => selectProject(project.id, tr);
+    $('projectRows').append(tr);
+  }
+}
+
+async function selectProject(projectId, row) {
+  state.projectId = projectId;
+  for (const tr of $('projectRows').children) tr.removeAttribute('aria-selected');
+  row.setAttribute('aria-selected', 'true');
+  $('tasks').hidden = false;
+  const dash = await api('GET', `/api/orgs/${state.orgId}/projects/${projectId}/dashboard`);
+  row.lastElementChild.textContent = Object.entries(dash.counts)
+    .map(([status, n]) => `${status} ${n}`).join('  ');
+  await loadTasks();
+}
+
+async function loadTasks() {
+  const status = $('filterStatus').value;
+  const query = status ? `?status=${status}` : '';
+  const { data } = await api('GET',
+    `/api/orgs/${state.orgId}/projects/${state.projectId}/tasks${query}`);
+  renderTasks(data);
+}
+
+function renderTasks(data) {
+  $('taskRows').innerHTML = data.length ? '' : '<tr><td colspan="4" class="empty">No tasks</td></tr>';
+  for (const task of data) {
+    const tr = document.createElement('tr');
+    const due = task.dueDate ? task.dueDate.slice(0, 10) : '';
+    tr.innerHTML = `<td>${task.title}</td><td><span class="tag">${task.status}</span></td>
+                    <td><span class="tag">${task.priority}</span></td><td class="dim">${due}</td>`;
+    tr.onclick = () => selectTask(task, tr);
+    $('taskRows').append(tr);
+  }
+}
+
+// Only the by-id endpoint carries assignees, so the roster is fetched on selection
+// rather than rendered per list row.
+async function selectTask(task, tr) {
+  state.taskId = task.id;
+  for (const row of $('taskRows').children) row.removeAttribute('aria-selected');
+  tr.setAttribute('aria-selected', 'true');
+  $('assign').hidden = false;
+  $('assignTask').textContent = task.title;
+  $('jobState').textContent = '';
+  await showAssignees();
+}
+
+async function showAssignees() {
+  const detail = await api('GET',
+    `/api/orgs/${state.orgId}/projects/${state.projectId}/tasks/${state.taskId}`);
+  const names = detail.assignees.map((a) => a.name).join(', ');
+  $('assignees').textContent = names ? `assigned: ${names}` : 'nobody assigned yet';
+}
+
+$('createProject').onclick = async () => {
+  if (!$('projectName').value) return;
+  await api('POST', `/api/orgs/${state.orgId}/projects`, { name: $('projectName').value });
+  $('projectName').value = '';
+  await loadProjects();
+};
+
+$('createTask').onclick = async () => {
+  if (!$('taskTitle').value) return;
+  await api('POST', `/api/orgs/${state.orgId}/projects/${state.projectId}/tasks`, {
+    title: $('taskTitle').value, status: $('taskStatus').value, priority: $('taskPriority').value,
+  });
+  $('taskTitle').value = '';
+  await loadTasks();
+};
+
+$('filterStatus').onchange = loadTasks;
+
+$('doSearch').onclick = async () => {
+  const q = $('search').value.trim();
+  if (!q) return loadTasks();
+  const { data } = await api('GET', `/api/orgs/${state.orgId}/tasks/search?q=${encodeURIComponent(q)}`);
+  renderTasks(data);
+};
+
+async function loadMembers() {
+  const { data } = await api('GET', `/api/orgs/${state.orgId}/members`);
+  $('member').innerHTML = data
+    .map((m) => `<option value="${m.userId}">${m.name}</option>`).join('');
+}
+
+$('doAssign').onclick = async () => {
+  const out = await api('POST',
+    `/api/orgs/${state.orgId}/projects/${state.projectId}/tasks/${state.taskId}/assignees`,
+    { userId: $('member').value });
+  await showAssignees();
+  if (!out.jobId) { $('jobState').textContent = 'queued: no (queue unavailable)'; return; }
+  // The worker is a separate process, so the job is still pending when this returns:
+  // poll until it settles to show the async hand-off actually completing.
+  for (let i = 0; i < 10; i++) {
+    const job = await api('GET', `/api/jobs/${out.jobId}`);
+    $('jobState').textContent = `job ${job.id}: ${job.status}`;
+    if (job.status === 'completed' || job.status === 'failed') return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+};
+</script>
+</body>
+</html>
