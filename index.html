@@ -61,7 +61,7 @@
 <header>
   <h1>TaskFlow test console</h1>
   <span id="who">not signed in</span>
-  <span style="margin-left:auto"><a href="/docs" style="color:var(--accent)">OpenAPI docs</a></span>
+  <span style="margin-left:auto"><a id="docsLink" href="/docs" style="color:var(--accent)">OpenAPI docs</a></span>
 </header>
 
 <main>
@@ -143,8 +143,16 @@ const state = { token: null, orgId: null, projectId: null, taskId: null };
 // Served from the API at /ui, this page is same-origin and needs no base. Hosted anywhere
 // else (GitHub Pages), it needs the API's address, so it is remembered per browser.
 $('apiBase').value = localStorage.getItem('taskflow.apiBase') ?? '';
-$('apiBase').onchange = () => localStorage.setItem('taskflow.apiBase', $('apiBase').value.trim().replace(/\/$/, ''));
 const base = () => $('apiBase').value.trim().replace(/\/$/, '');
+// Swagger UI lives on the API, not on whatever origin serves this page.
+const pointDocsAtApi = () => {
+  $('docsLink').href = `${base()}/docs`;
+};
+$('apiBase').onchange = () => {
+  localStorage.setItem('taskflow.apiBase', base());
+  pointDocsAtApi();
+};
+pointDocsAtApi();
 
 function log(method, path, status, note = '') {
   const line = document.createElement('div');
